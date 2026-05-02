@@ -117,13 +117,31 @@ async def download_and_send(update_or_query, context, url, status_msg, format_id
         if file_size > 50:
              await context.bot.send_message(chat_id=chat_id, text=f" Cảnh báo: File vẫn nặng {file_size:.1f}MB. Có thể thất bại.")
 
-        with open(file_path, 'rb') as video_file:
-            await context.bot.send_video(
-                chat_id=chat_id,
-                video=video_file,
-                caption=f" {title}\n\nĐã tải xong!",
-                supports_streaming=True
-            )
+        # Kiểm tra định dạng file để gửi đúng kiểu
+        ext = os.path.splitext(file_path)[1].lower()
+        is_video = ext in ['.mp4', '.mkv', '.mov', '.webm']
+        is_image = ext in ['.jpg', '.jpeg', '.png', '.webp']
+
+        with open(file_path, 'rb') as f:
+            if is_video:
+                await context.bot.send_video(
+                    chat_id=chat_id,
+                    video=f,
+                    caption=f" {title}\n\nĐã tải xong video!",
+                    supports_streaming=True
+                )
+            elif is_image:
+                await context.bot.send_photo(
+                    chat_id=chat_id,
+                    photo=f,
+                    caption=f" {title}\n\nĐã tải xong ảnh!"
+                )
+            else:
+                await context.bot.send_document(
+                    chat_id=chat_id,
+                    document=f,
+                    caption=f" {title}\n\nĐã tải xong file!"
+                )
         
         if file_path and os.path.exists(file_path):
             os.remove(file_path)
