@@ -11,8 +11,6 @@ Bot Telegram mạnh mẽ hỗ trợ tải Video và Ảnh từ nhiều nguồn (
 - **Tải hàng loạt (Batch Download)**: Gửi danh sách nhiều link (mỗi link một dòng) để bot xử lý cùng lúc.
 - **Hỗ trợ Ảnh**: Tự động nhận diện và tải ảnh/album từ Instagram, Facebook.
 - **Xóa Watermark**: Tự động lấy bản "sạch" cho TikTok và Douyin.
-- **Lách chặn & Tải Story**: Hỗ trợ sử dụng file `cookies.txt` để tải Facebook Stories hoặc nội dung yêu cầu đăng nhập.
-- **Menu tiện lợi**: Tích hợp sẵn các lệnh `/start`, `/help`, `/author` trong menu bot.
 - **Tự động dọn dẹp**: Xóa file tạm trên máy tính sau khi gửi để tiết kiệm bộ nhớ.
 
 ## 🛠️ Cài đặt
