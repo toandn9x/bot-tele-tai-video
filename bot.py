@@ -83,7 +83,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         logger.error(f"Error handling message: {e}")
-        await status_msg.edit_text(f" Có lỗi xảy ra khi tải video: {str(e)}")
+        error_msg = str(e)
+        if "Unsupported URL" in error_msg:
+            await status_msg.edit_text(" Xin lỗi, link này không được hỗ trợ hoặc không tìm thấy video.")
+        elif "Video too large" in error_msg:
+            await status_msg.edit_text(" Video quá lớn so với giới hạn của Telegram (50MB).")
+        else:
+            await status_msg.edit_text(" Có lỗi xảy ra khi xử lý link này. Vui lòng kiểm tra lại link của bạn.")
+        
         # Cleanup if file exists but failed to send
         if 'file_path' in locals() and os.path.exists(file_path):
             os.remove(file_path)
