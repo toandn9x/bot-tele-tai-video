@@ -51,13 +51,23 @@ def download_video(url, download_dir='downloads'):
         logger.error(f"Error downloading video: {e}")
         raise e
 
-def get_video_info(url):
+def get_best_format_info(url):
     """
-    Fetches video info without downloading.
+    Lấy thông tin dung lượng của bản tốt nhất.
     """
     ydl_opts = {
+        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
         'quiet': True,
         'no_warnings': True,
     }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        return ydl.extract_info(url, download=False)
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            size = info.get('filesize') or info.get('filesize_approx') or 0
+            return size / (1024 * 1024), info.get('title', 'Video')
+    except Exception as e:
+        logger.error(f"Error checking best format size: {e}")
+        return 0, "Video"
+
+def get_available_formats(url):
+# ... (rest remains same)
