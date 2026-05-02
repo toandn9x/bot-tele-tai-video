@@ -149,7 +149,9 @@ async def download_and_send(update_or_query, context, url, status_msg, format_id
 
     except Exception as e:
         logger.error(f"Error: {e}")
-        await status_msg.edit_text(" Lỗi khi tải hoặc gửi video.")
+        error_msg = str(e)
+        # Hiển thị lỗi chi tiết để debug
+        await status_msg.edit_text(f" Lỗi chi tiết: {error_msg[:100]}...")
         if file_path and os.path.exists(file_path):
             os.remove(file_path)
 
