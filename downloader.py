@@ -13,8 +13,6 @@ def download_video(url, download_dir='downloads'):
         os.makedirs(download_dir)
 
     # yt-dlp options
-    # Ưu tiên mp4 và chất lượng tốt nhất. 
-    # Đối với TikTok/Douyin, yt-dlp sẽ cố gắng lấy bản không watermark (nwm) nếu có thể.
     ydl_opts = {
         'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
         'outtmpl': f'{download_dir}/%(title).50s_%(id)s.%(ext)s',
@@ -35,11 +33,7 @@ def download_video(url, download_dir='downloads'):
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
             
-            # Sometimes the extension changes during download (e.g. merging)
-            # yt-dlp prepare_filename might not always reflect the final merged file extension if it changes
-            # But usually it's correct. Let's verify existence.
             if not os.path.exists(filename):
-                # Check for same name with different extension just in case
                 base = os.path.splitext(filename)[0]
                 for f in os.listdir(download_dir):
                     if f.startswith(os.path.basename(base)):
@@ -70,4 +64,55 @@ def get_best_format_info(url):
         return 0, "Video"
 
 def get_available_formats(url):
-# ... (rest remains same)
+    """
+    Trả về danh sách các độ phân giải có sẵn (mp4).
+    """
+    ydl_opts = {
+        'quiet': True,
+        'no_warnings': True,
+    }
+    formats = []
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            for f in info.get('formats', []):
+                if f.get('vcodec') != 'none' and f.get('ext') == 'mp4':
+                    res = f.get('height')
+                    if res and res not in [fmt['height'] for fmt in formats]:
+                        formats.append({
+                            'height': res,
+                            'format_id': f.get('format_id'),
+                            'filesize': f.get('filesize') or f.get('filesize_approx')
+                        })
+            formats.sort(key=lambda x: x['height'], reverse=True)
+            return formats[:5], info.get('title', 'Video')
+    except Exception as e:
+        logger.error(f"Error getting formats: {e}")
+        return [], "Video"
+
+def download_specific_format(url, format_id, download_dir='downloads'):
+    """
+    Tải video với format_id cụ thể.
+    """
+    if not os.path.exists(download_dir):
+        os.makedirs(download_dir)
+
+    ydl_opts = {
+        'format': f'{format_id}+bestaudio/best',
+        'outtmpl': f'{download_dir}/%(title).50s_%(id)s.%(ext)s',
+        'merge_output_format': 'mp4',
+        'noplaylist': True,
+        'quiet': True,
+    }
+
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=True)
+        filename = ydl.prepare_filename(info)
+        # Verify merged extension
+        if not os.path.exists(filename):
+             base = os.path.splitext(filename)[0]
+             for f in os.listdir(download_dir):
+                 if f.startswith(os.path.basename(base)):
+                     filename = os.path.join(download_dir, f)
+                     break
+        return filename, info.get('title', 'Video')
