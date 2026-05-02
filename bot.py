@@ -50,6 +50,10 @@ async def post_init(application):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = update.message.text
     if not url or not url.startswith("http"):
+        await update.message.reply_text(
+            " Xin lỗi, tôi chỉ hỗ trợ tải video từ đường link (bắt đầu bằng http).\n"
+            "Hãy gửi cho tôi một link video từ YouTube, TikTok, Facebook... nhé!"
+        )
         return
 
     status_msg = await update.message.reply_text(" đang xử lý video... Vui lòng đợi trong giây lát.")
