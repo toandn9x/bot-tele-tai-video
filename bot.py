@@ -47,44 +47,51 @@ async def post_init(application):
     await application.bot.set_my_commands(commands)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    url = update.message.text
-    if not url or not url.startswith("http"):
-        await update.message.reply_text(" Xin hãy gửi một đường link video hợp lệ.")
+    text = update.message.text
+    if not text:
         return
 
-    status_msg = await update.message.reply_text(" Đang kiểm tra video...")
+    # Tách các dòng và lọc ra các URL
+    urls = [line.strip() for line in text.split('\n') if line.strip().startswith('http')]
     
-    try:
-        best_size, title = await asyncio.to_thread(get_best_format_info, url)
+    if not urls:
+        await update.message.reply_text(" Xin hãy gửi các đường link video hợp lệ (mỗi link một dòng).")
+        return
+
+    for url in urls:
+        status_msg = await update.message.reply_text(f" Đang kiểm tra: {url}")
         
-        # Nếu video nhỏ hơn 50MB, tải ngay bản tốt nhất
-        if 0 < best_size <= 50:
-            await status_msg.edit_text(f" Video hợp lệ (~{best_size:.1f}MB). Đang tải bản tốt nhất...")
-            await download_and_send(update, context, url, status_msg, "best")
-        else:
-            # Nếu > 50MB hoặc không rõ dung lượng, cho chọn chất lượng
-            await status_msg.edit_text(" Bản tốt nhất > 50MB. Vui lòng chọn chất lượng thấp hơn để tải lên Telegram:")
-            formats, title = await asyncio.to_thread(get_available_formats, url)
+        try:
+            best_size, title = await asyncio.to_thread(get_best_format_info, url)
             
-            if not formats:
-                await status_msg.edit_text(" Không tìm thấy bản nhẹ hơn. Đang thử tải bản tốt nhất...")
+            # Nếu video nhỏ hơn 50MB, tải ngay bản tốt nhất
+            if 0 < best_size <= 50:
+                await status_msg.edit_text(f" Đang tải: {title} (~{best_size:.1f}MB)")
                 await download_and_send(update, context, url, status_msg, "best")
-                return
+            else:
+                # Nếu > 50MB hoặc không rõ dung lượng, cho chọn chất lượng
+                await status_msg.edit_text(f" {title} (>50MB). Vui lòng chọn chất lượng:")
+                formats, _ = await asyncio.to_thread(get_available_formats, url)
+                
+                if not formats:
+                    await status_msg.edit_text(f" Đang tải bản tốt nhất: {title}")
+                    await download_and_send(update, context, url, status_msg, "best")
+                    continue
 
-            keyboard = []
-            for fmt in formats:
-                size_str = f" (~{fmt['filesize']/(1024*1024):.1f}MB)" if fmt['filesize'] else ""
-                btn_text = f"{fmt['height']}p{size_str}"
-                callback_data = f"dl|{fmt['format_id']}|{url}"
-                keyboard.append([InlineKeyboardButton(btn_text, callback_data=callback_data)])
-            
-            keyboard.append([InlineKeyboardButton(" Vẫn tải bản tốt nhất", callback_data=f"dl|best|{url}")])
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await status_msg.edit_text(f" Video: {title}\nBản gốc (~{best_size:.1f}MB) quá lớn.", reply_markup=reply_markup)
+                keyboard = []
+                for fmt in formats:
+                    size_str = f" (~{fmt['filesize']/(1024*1024):.1f}MB)" if fmt['filesize'] else ""
+                    btn_text = f"{fmt['height']}p{size_str}"
+                    callback_data = f"dl|{fmt['format_id']}|{url}"
+                    keyboard.append([InlineKeyboardButton(btn_text, callback_data=callback_data)])
+                
+                keyboard.append([InlineKeyboardButton(" Vẫn tải bản tốt nhất", callback_data=f"dl|best|{url}")])
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await status_msg.edit_text(f" Video: {title}\nBản gốc (~{best_size:.1f}MB) quá lớn.", reply_markup=reply_markup)
 
-    except Exception as e:
-        logger.error(f"Error in handle_message: {e}")
-        await status_msg.edit_text(" Có lỗi xảy ra khi kiểm tra video.")
+        except Exception as e:
+            logger.error(f"Error in handle_message: {e}")
+            await status_msg.edit_text(f" Lỗi khi kiểm tra link: {url}")
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
