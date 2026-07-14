@@ -32,3 +32,7 @@ ENV/
 # Temp files
 downloads/
 *.tmp
+
+# Bot data
+stats.json
+cookies.txt
