@@ -1,15 +1,23 @@
 import os
+import re
+import time
 import logging
 import asyncio
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+import secrets
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
+from telegram.constants import ChatAction
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from dotenv import load_dotenv
-from downloader import download_video, get_available_formats, download_specific_format, get_best_format_info
+from downloader import get_video_info, download_video, download_specific_format
 
 # Load environment variables
 load_dotenv()
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 DOWNLOAD_DIR = os.getenv("DOWNLOAD_PATH", "downloads")
+
+TELEGRAM_LIMIT_MB = 50      # Giới hạn gửi file của Telegram Bot API
+MAX_CONCURRENT_DOWNLOADS = 3
+URL_REGISTRY_MAX = 500      # Số link tối đa giữ trong bộ nhớ chờ người dùng bấm nút
 
 # Logging setup
 logging.basicConfig(
@@ -17,6 +25,140 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+# httpx log mỗi request kèm cả token bot trong URL — hạ mức để không lộ token
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
+download_semaphore = asyncio.Semaphore(MAX_CONCURRENT_DOWNLOADS)
+
+
+def friendly_error(url, error):
+    """Dịch lỗi yt-dlp thành hướng dẫn dễ hiểu cho người dùng."""
+    err = re.sub(r'\x1b\[[0-9;]*m', '', str(error))  # bỏ mã màu ANSI của yt-dlp
+    low = err.lower()
+
+    if 'facebook.com/stories' in url:
+        return ("⚠️ Facebook Stories hiện chưa được yt-dlp hỗ trợ (kể cả khi đã có cookies đăng nhập).\n"
+                "Bạn hãy gửi link video/reel/bài đăng thông thường.")
+    if 'login' in low or 'cookie' in low or 'logged' in low or 'private' in low:
+        if os.path.exists('cookies.txt'):
+            return ("🔒 Nội dung yêu cầu đăng nhập nhưng cookies hiện tại không truy cập được.\n"
+                    "Cookies có thể đã hết hạn — hãy xuất lại file cookies.txt mới từ trình duyệt.")
+        return ("🔒 Nội dung này yêu cầu đăng nhập.\n"
+                "Dùng tiện ích \"Get cookies.txt LOCALLY\" trên trình duyệt, xuất cookies của trang đó "
+                "và lưu thành file cookies.txt vào thư mục bot (không cần khởi động lại bot).")
+    if 'unsupported url' in low:
+        return "⚠️ Trang này chưa được yt-dlp hỗ trợ tải."
+    if 'unavailable' in low or 'removed' in low or 'does not exist' in low:
+        return "⚠️ Video không tồn tại, đã bị xóa hoặc bị giới hạn người xem."
+    if 'not available in your country' in low:
+        return "🌍 Video bị chặn theo khu vực địa lý."
+    return f"❌ Lỗi: {err[:200]}"
+
+
+def remember_url(context, url, job):
+    """
+    Lưu URL (kèm job của tin nhắn gốc) vào bot_data và trả về token ngắn.
+    callback_data của Telegram giới hạn 64 byte nên không nhét URL trực tiếp được.
+    """
+    urls = context.bot_data.setdefault('urls', {})
+    while len(urls) >= URL_REGISTRY_MAX:
+        urls.pop(next(iter(urls)))
+    token = secrets.token_hex(4)
+    urls[token] = {'url': url, 'job': job}
+    return token
+
+
+async def finish_job_item(job, success):
+    """
+    Đánh dấu một link trong tin nhắn gốc đã xử lý xong.
+    Khi tất cả link đều gửi thành công thì xóa tin nhắn link gốc
+    (kèm preview) để chat gọn gàng — link đã được giữ trong caption video.
+    """
+    job['remaining'] -= 1
+    if not success:
+        job['failed'] += 1
+    if job['remaining'] <= 0 and job['failed'] == 0:
+        try:
+            await job['message'].delete()
+        except Exception:
+            pass  # trong nhóm bot cần quyền "Delete messages" — không có thì bỏ qua
+
+
+def _render_bar(pct, width=12):
+    """Vẽ thanh tiến trình dạng ▰▰▰▰▱▱▱▱."""
+    filled = round(pct / 100 * width)
+    return '▰' * filled + '▱' * (width - filled)
+
+
+def start_animation(bot, chat_id, status_msg, text, action=None):
+    """
+    Quay spinner đồng hồ trên status_msg (kèm chat action native của Telegram
+    nếu có) cho tới khi gọi hàm stop() được trả về.
+    """
+    frames = '🕐🕑🕒🕓🕔🕕🕖🕗🕘🕙🕚🕛'
+    stop_event = asyncio.Event()
+
+    async def _loop():
+        i = 0
+        while not stop_event.is_set():
+            if action and i % 2 == 0:
+                try:
+                    await bot.send_chat_action(chat_id=chat_id, action=action)
+                except Exception:
+                    pass
+            try:
+                await status_msg.edit_text(f"{frames[i % len(frames)]} {text}")
+            except Exception:
+                pass  # flood limit hoặc nội dung không đổi — bỏ qua
+            i += 1
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=2)
+            except asyncio.TimeoutError:
+                pass
+
+    task = asyncio.create_task(_loop())
+
+    async def stop():
+        stop_event.set()
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    return stop
+
+
+def make_progress_hook(loop, status_msg, title):
+    """Tạo hook cho yt-dlp: cập nhật thanh tiến trình lên status_msg, tối đa 3 giây/lần."""
+    state = {'last': 0.0}
+
+    async def _edit(text):
+        try:
+            await status_msg.edit_text(text)
+        except Exception:
+            pass  # "Message is not modified" hoặc flood limit — bỏ qua
+
+    def hook(d):
+        if d.get('status') != 'downloading':
+            return
+        now = time.monotonic()
+        if now - state['last'] < 3:
+            return
+        state['last'] = now
+        done = d.get('downloaded_bytes') or 0
+        total = d.get('total_bytes') or d.get('total_bytes_estimate')
+        if total:
+            pct = done / total * 100
+            text = (f"⬇️ Đang tải: {title}\n"
+                    f"{_render_bar(pct)} {pct:.0f}% · {done / 1048576:.1f}/{total / 1048576:.1f}MB")
+        else:
+            text = f"⬇️ Đang tải: {title}\n📥 {done / 1048576:.1f}MB đã tải..."
+        # Hook chạy trong thread tải, phải đẩy việc sửa tin nhắn về event loop
+        asyncio.run_coroutine_threadsafe(_edit(text), loop)
+
+    return hook
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -24,11 +166,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Hãy gửi link video cho tôi. Nếu bản tốt nhất dưới 50MB tôi sẽ tải ngay, nếu không tôi sẽ cho bạn chọn chất lượng."
     )
 
+
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Gửi link video trực tiếp vào khung chat.\n"
+        "Gửi link video trực tiếp vào khung chat (nhiều link thì mỗi link một dòng).\n"
         "Lưu ý: Telegram Bot giới hạn gửi file tối đa 50MB."
     )
+
 
 async def author_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -37,8 +181,8 @@ async def author_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Chúc bạn sử dụng bot vui vẻ!"
     )
 
+
 async def post_init(application):
-    from telegram import BotCommand
     commands = [
         BotCommand("start", "Khởi động bot"),
         BotCommand("help", "Hướng dẫn sử dụng"),
@@ -46,124 +190,167 @@ async def post_init(application):
     ]
     await application.bot.set_my_commands(commands)
 
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     if not text:
         return
 
-    # Tách các dòng và lọc ra các URL
     urls = [line.strip() for line in text.split('\n') if line.strip().startswith('http')]
-    
+
     if not urls:
-        await update.message.reply_text(" Xin hãy gửi các đường link video hợp lệ (mỗi link một dòng).")
+        await update.message.reply_text("Xin hãy gửi các đường link video hợp lệ (mỗi link một dòng).")
         return
 
-    for url in urls:
-        status_msg = await update.message.reply_text(f" Đang kiểm tra: {url}")
-        
-        try:
-            best_size, title = await asyncio.to_thread(get_best_format_info, url)
-            
-            # Nếu video nhỏ hơn 50MB, tải ngay bản tốt nhất
-            if 0 < best_size <= 50:
-                await status_msg.edit_text(f" Đang tải: {title} (~{best_size:.1f}MB)")
-                await download_and_send(update, context, url, status_msg, "best")
-            else:
-                # Nếu > 50MB hoặc không rõ dung lượng, cho chọn chất lượng
-                await status_msg.edit_text(f" {title} (>50MB). Vui lòng chọn chất lượng:")
-                formats, _ = await asyncio.to_thread(get_available_formats, url)
-                
-                if not formats:
-                    await status_msg.edit_text(f" Đang tải bản tốt nhất: {title}")
-                    await download_and_send(update, context, url, status_msg, "best")
-                    continue
+    # Job theo dõi tin nhắn gốc: khi mọi link gửi xong thì xóa tin nhắn link cho gọn chat
+    job = {'message': update.message, 'remaining': len(urls), 'failed': 0}
 
-                keyboard = []
-                for fmt in formats:
-                    size_str = f" (~{fmt['filesize']/(1024*1024):.1f}MB)" if fmt['filesize'] else ""
-                    btn_text = f"{fmt['height']}p{size_str}"
-                    callback_data = f"dl|{fmt['format_id']}|{url}"
-                    keyboard.append([InlineKeyboardButton(btn_text, callback_data=callback_data)])
-                
-                keyboard.append([InlineKeyboardButton(" Vẫn tải bản tốt nhất", callback_data=f"dl|best|{url}")])
-                reply_markup = InlineKeyboardMarkup(keyboard)
-                await status_msg.edit_text(f" Video: {title}\nBản gốc (~{best_size:.1f}MB) quá lớn.", reply_markup=reply_markup)
+    # Các link chạy song song, số lượt tải đồng thời do semaphore khống chế
+    await asyncio.gather(*(process_url(update, context, url, job) for url in urls), return_exceptions=True)
 
-        except Exception as e:
-            logger.error(f"Error in handle_message: {e}")
-            await status_msg.edit_text(f" Lỗi khi kiểm tra link: {url}")
+
+async def process_url(update: Update, context: ContextTypes.DEFAULT_TYPE, url: str, job: dict):
+    status_msg = await update.message.reply_text(f"🔍 Đang kiểm tra: {url}")
+    stop_anim = start_animation(context.bot, update.message.chat_id, status_msg,
+                                f"Đang kiểm tra: {url}", ChatAction.TYPING)
+
+    try:
+        best_size, title, formats = await asyncio.to_thread(get_video_info, url)
+    except Exception as e:
+        logger.error(f"Error checking {url}: {e}")
+        await stop_anim()
+        await status_msg.edit_text(f"Không tải được: {url}\n\n{friendly_error(url, e)}")
+        await finish_job_item(job, False)
+        return
+    finally:
+        await stop_anim()
+
+    # Bản tốt nhất đủ nhỏ (hoặc không có format nào để chọn) → tải luôn
+    if 0 < best_size <= TELEGRAM_LIMIT_MB or not formats:
+        size_note = f" (~{best_size:.1f}MB)" if best_size else ""
+        await status_msg.edit_text(f"⬇️ Đang tải: {title}{size_note}")
+        ok = await download_and_send(update.message.chat_id, context, url, status_msg, "best", title)
+        await finish_job_item(job, ok)
+        return
+
+    # Quá lớn hoặc không rõ dung lượng → cho chọn chất lượng
+    token = remember_url(context, url, job)
+    keyboard = []
+    for fmt in formats:
+        size_str = f" (~{fmt['filesize'] / 1048576:.1f}MB)" if fmt['filesize'] else ""
+        keyboard.append([InlineKeyboardButton(
+            f"{fmt['height']}p{size_str}",
+            callback_data=f"dl|{fmt['format_id']}|{token}"
+        )])
+    keyboard.append([InlineKeyboardButton("🎯 Vẫn tải bản tốt nhất", callback_data=f"dl|best|{token}")])
+
+    size_note = f"Bản gốc ~{best_size:.1f}MB, vượt giới hạn 50MB." if best_size else "Không rõ dung lượng bản gốc."
+    await status_msg.edit_text(
+        f"🎬 {title}\n{size_note} Vui lòng chọn chất lượng:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    data = query.data.split("|")
-    if data[0] == "dl":
-        await query.edit_message_text(text=" Đang tải video bạn đã chọn...")
-        await download_and_send(query, context, data[2], query.message, data[1])
 
-async def download_and_send(update_or_query, context, url, status_msg, format_id):
+    parts = query.data.split("|")
+    if parts[0] != "dl" or len(parts) != 3:
+        return
+
+    format_id, token = parts[1], parts[2]
+    entry = context.bot_data.get('urls', {}).get(token)
+    if not entry:
+        await query.edit_message_text("⚠️ Phiên đã hết hạn (bot vừa khởi động lại). Vui lòng gửi lại link.")
+        return
+
+    await query.edit_message_text("⏳ Đang chuẩn bị tải video bạn đã chọn...")
+    ok = await download_and_send(query.message.chat_id, context, entry['url'], query.message, format_id, "video")
+    await finish_job_item(entry['job'], ok)
+
+
+async def download_and_send(chat_id, context, url, status_msg, format_id, title="video"):
+    """Tải rồi gửi file; trả về True nếu gửi thành công."""
     file_path = None
     try:
-        if format_id == "best":
-            file_path, title = await asyncio.to_thread(download_video, url, DOWNLOAD_DIR)
-        else:
-            file_path, title = await asyncio.to_thread(download_specific_format, url, format_id, DOWNLOAD_DIR)
-        
-        await status_msg.edit_text(f" Đang gửi video: {title}")
-        
-        chat_id = update_or_query.message.chat_id if hasattr(update_or_query, 'message') else update_or_query.chat_id
-        file_size = os.path.getsize(file_path) / (1024 * 1024)
-        
-        if file_size > 50:
-             await context.bot.send_message(chat_id=chat_id, text=f" Cảnh báo: File vẫn nặng {file_size:.1f}MB. Có thể thất bại.")
+        async with download_semaphore:
+            hook = make_progress_hook(asyncio.get_running_loop(), status_msg, title)
+            if format_id == "best":
+                file_path, title = await asyncio.to_thread(download_video, url, DOWNLOAD_DIR, hook)
+            else:
+                file_path, title = await asyncio.to_thread(download_specific_format, url, format_id, DOWNLOAD_DIR, hook)
 
-        # Kiểm tra định dạng file để gửi đúng kiểu
+        file_size = os.path.getsize(file_path) / (1024 * 1024)
+        if file_size > TELEGRAM_LIMIT_MB:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"⚠️ File nặng {file_size:.1f}MB, vượt giới hạn {TELEGRAM_LIMIT_MB}MB của Telegram. Có thể gửi thất bại."
+            )
+
+        # Tin nhắn link gốc sẽ bị xóa nên giữ lại link trong caption
+        caption = f"{title[:700]}\n\n🔗 {url}"
+
+        # Kiểm tra định dạng file để gửi đúng kiểu (và chọn chat action tương ứng)
         ext = os.path.splitext(file_path)[1].lower()
         is_video = ext in ['.mp4', '.mkv', '.mov', '.webm']
         is_image = ext in ['.jpg', '.jpeg', '.png', '.webp']
+        action = ChatAction.UPLOAD_VIDEO if is_video else (
+            ChatAction.UPLOAD_PHOTO if is_image else ChatAction.UPLOAD_DOCUMENT)
 
-        with open(file_path, 'rb') as f:
-            if is_video:
-                await context.bot.send_video(
-                    chat_id=chat_id,
-                    video=f,
-                    caption=f" {title}\n\nĐã tải xong video!",
-                    supports_streaming=True
-                )
-            elif is_image:
-                await context.bot.send_photo(
-                    chat_id=chat_id,
-                    photo=f,
-                    caption=f" {title}\n\nĐã tải xong ảnh!"
-                )
-            else:
-                await context.bot.send_document(
-                    chat_id=chat_id,
-                    document=f,
-                    caption=f" {title}\n\nĐã tải xong file!"
-                )
-        
-        if file_path and os.path.exists(file_path):
-            os.remove(file_path)
+        stop_anim = start_animation(context.bot, chat_id, status_msg,
+                                    f"Đang gửi: {title} ({file_size:.1f}MB)", action)
+        try:
+            with open(file_path, 'rb') as f:
+                if is_video:
+                    await context.bot.send_video(
+                        chat_id=chat_id,
+                        video=f,
+                        caption=caption,
+                        supports_streaming=True
+                    )
+                elif is_image:
+                    await context.bot.send_photo(chat_id=chat_id, photo=f, caption=caption)
+                else:
+                    await context.bot.send_document(chat_id=chat_id, document=f, caption=caption)
+        finally:
+            await stop_anim()
+
         await status_msg.delete()
+        return True
 
     except Exception as e:
         logger.error(f"Error: {e}")
-        error_msg = str(e)
-        # Hiển thị lỗi chi tiết để debug
-        await status_msg.edit_text(f" Lỗi chi tiết: {error_msg[:100]}...")
+        await status_msg.edit_text(friendly_error(url, e))
+        return False
+    finally:
         if file_path and os.path.exists(file_path):
             os.remove(file_path)
 
+
 if __name__ == '__main__':
     if not TOKEN:
-        print("Lỗi Token!")
+        print("Lỗi: chưa cấu hình TELEGRAM_BOT_TOKEN trong file .env!")
         exit(1)
-    app = ApplicationBuilder().token(TOKEN).post_init(post_init).build()
+
+    builder = (
+        ApplicationBuilder()
+        .token(TOKEN)
+        .connect_timeout(30)
+        .read_timeout(60)
+        .write_timeout(300)  # Upload file lớn cần timeout dài hơn mặc định 20s
+    )
+    # PTB >= 20.7 tách riêng timeout cho media upload
+    if hasattr(builder, 'media_write_timeout'):
+        builder = builder.media_write_timeout(300)
+
+    app = builder.post_init(post_init).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("author", author_command))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
-    print("Bot đang chạy (Hybrid Mode)...")
+
+    import yt_dlp
+    print(f"Bot đang chạy (Hybrid Mode)... [yt-dlp {yt_dlp.version.__version__}]")
     app.run_polling()

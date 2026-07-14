@@ -29,9 +29,10 @@ Bot Telegram mạnh mẽ hỗ trợ tải Video và Ảnh từ nhiều nguồn (
    - Tạo file `.env` từ `.env.example`.
    - Điền `TELEGRAM_BOT_TOKEN` (lấy từ @BotFather).
 
-4. **Cách tải Facebook Stories/Nội dung riêng tư:**
-   - Sử dụng tiện ích "Get cookies.txt" trên trình duyệt.
-   - Xuất file cookies của Facebook/Instagram và lưu tên là `cookies.txt` vào thư mục gốc của bot.
+4. **Cách tải nội dung riêng tư (video private, reels giới hạn):**
+   - Sử dụng tiện ích "Get cookies.txt LOCALLY" trên trình duyệt.
+   - Xuất file cookies của Facebook/Instagram và lưu tên là `cookies.txt` vào thư mục gốc của bot (bot tự nhận, không cần khởi động lại).
+   - ⚠️ *Lưu ý: Facebook **Stories** hiện chưa được yt-dlp hỗ trợ, kể cả khi có cookies. Chỉ tải được video/reel/bài đăng.*
 
 ## 🚀 Khởi chạy
 
