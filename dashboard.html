@@ -61,6 +61,14 @@
 
   header { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 22px; }
   header h1 { font-size: 22px; font-weight: 650; }
+  .botlink {
+    margin-left: auto;
+    font-size: 13px; text-decoration: none; color: var(--ink-2);
+    border: 1px solid var(--border); border-radius: 999px;
+    padding: 5px 12px; background: var(--surface);
+    transition: border-color .15s, color .15s;
+  }
+  .botlink:hover { color: var(--ink); border-color: var(--baseline); }
   .live { font-size: 13px; color: var(--ink-2); display: flex; align-items: center; gap: 6px; }
   .live .dot {
     width: 8px; height: 8px; border-radius: 50%;
@@ -132,6 +140,7 @@
   <header>
     <h1>🤖 Bot Tải Video — Dashboard</h1>
     <div class="live" id="live"><span class="dot"></span><span id="liveText">đang kết nối...</span></div>
+    <a class="botlink" href="https://telegram.me/taivideoonlinebot" target="_blank" rel="noopener">💬 Chat với bot: @taivideoonlinebot</a>
   </header>
 
   <div id="root">
