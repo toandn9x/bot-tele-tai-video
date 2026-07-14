@@ -1,13 +1,23 @@
 import yt_dlp
 import os
+import shutil
 import logging
 
 logger = logging.getLogger(__name__)
 
 COOKIES_FILE = 'cookies.txt'
-# Không giới hạn ext=mp4 để lấy được cả 4K/VP9/AV1 (chỉ có bản webm);
-# ưu tiên audio m4a để merge vào mp4 mượt nhất, không có thì lấy audio tốt nhất
-BEST_FORMAT = 'bestvideo+bestaudio[ext=m4a]/bestvideo+bestaudio/best'
+HAS_FFMPEG = bool(shutil.which('ffmpeg'))
+
+if HAS_FFMPEG:
+    # Không giới hạn ext=mp4 để lấy được cả 4K/VP9/AV1 (chỉ có bản webm);
+    # ưu tiên audio m4a để merge vào mp4 mượt nhất, không có thì lấy audio tốt nhất
+    BEST_FORMAT = 'bestvideo+bestaudio[ext=m4a]/bestvideo+bestaudio/best'
+else:
+    # Thiếu FFmpeg thì không merge được video+audio rời — dùng bản single-file
+    # tốt nhất (YouTube thường chỉ tới 720p). Cài FFmpeg để có chất lượng cao nhất.
+    BEST_FORMAT = 'best'
+    logger.warning("Không tìm thấy FFmpeg — chạy chế độ hạn chế (tối đa ~720p, không merge). "
+                   "Hãy cài FFmpeg hoặc deploy bằng Dockerfile kèm sẵn.")
 
 
 def _build_opts(extra=None):
@@ -65,8 +75,9 @@ def _download(url, format_spec, download_dir, progress_hook=None):
     extra = {
         'format': format_spec,
         'outtmpl': f'{download_dir}/%(title).50s_%(id)s.%(ext)s',
-        'merge_output_format': 'mp4',
     }
+    if HAS_FFMPEG:
+        extra['merge_output_format'] = 'mp4'
     if progress_hook:
         extra['progress_hooks'] = [progress_hook]
 
@@ -88,4 +99,7 @@ def download_video(url, download_dir='downloads', progress_hook=None):
 
 def download_specific_format(url, format_id, download_dir='downloads', progress_hook=None):
     """Tải theo format_id người dùng chọn, tự merge thêm audio tốt nhất."""
-    return _download(url, f'{format_id}+bestaudio/best', download_dir, progress_hook)
+    if HAS_FFMPEG:
+        return _download(url, f'{format_id}+bestaudio/best', download_dir, progress_hook)
+    # Thiếu FFmpeg: format video-only sẽ không có tiếng — ưu tiên bản có sẵn audio
+    return _download(url, f'{format_id}[acodec!=none]/best', download_dir, progress_hook)

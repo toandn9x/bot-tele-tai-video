@@ -1,0 +1,10 @@
+# Blueprint deploy lên Render.com — https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: bot-tele-tai-video
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/stats
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false   # nhập token trong Render Dashboard, không lưu vào repo

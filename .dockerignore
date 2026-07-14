@@ -1,0 +1,11 @@
+.git
+.gitignore
+__pycache__
+*.pyc
+.env
+.env.example
+downloads/
+stats.json
+cookies.txt
+README.md
+render.yaml

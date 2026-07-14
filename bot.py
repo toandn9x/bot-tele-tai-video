@@ -9,6 +9,8 @@ from telegram.constants import ChatAction
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from dotenv import load_dotenv
 from downloader import get_video_info, download_video, download_specific_format
+import stats
+from dashboard import start_dashboard
 
 # Load environment variables
 load_dotenv()
@@ -220,6 +222,7 @@ async def process_url(update: Update, context: ContextTypes.DEFAULT_TYPE, url: s
         logger.error(f"Error checking {url}: {e}")
         await stop_anim()
         await status_msg.edit_text(f"Không tải được: {url}\n\n{friendly_error(url, e)}")
+        stats.record(url, ok=False)
         await finish_job_item(job, False)
         return
     finally:
@@ -317,11 +320,14 @@ async def download_and_send(chat_id, context, url, status_msg, format_id, title=
             await stop_anim()
 
         await status_msg.delete()
+        stats.record(url, ok=True, size_mb=file_size, title=title,
+                     quality='tốt nhất' if format_id == 'best' else format_id)
         return True
 
     except Exception as e:
         logger.error(f"Error: {e}")
         await status_msg.edit_text(friendly_error(url, e))
+        stats.record(url, ok=False, title=title if title != 'video' else '')
         return False
     finally:
         if file_path and os.path.exists(file_path):
@@ -344,6 +350,16 @@ if __name__ == '__main__':
     if hasattr(builder, 'media_write_timeout'):
         builder = builder.media_write_timeout(300)
 
+    # Trên Render/cloud: biến PORT được cấp sẵn và service phải bind 0.0.0.0
+    # để qua vòng port scan. Chạy local thì giữ 127.0.0.1 cho riêng tư.
+    cloud_port = os.getenv("PORT")
+    dashboard_port = int(cloud_port or os.getenv("DASHBOARD_PORT", "8350"))
+    dashboard_host = "0.0.0.0" if cloud_port else os.getenv("DASHBOARD_HOST", "127.0.0.1")
+    if dashboard_port:
+        dashboard_url = start_dashboard(dashboard_port, dashboard_host)
+        if dashboard_url:
+            print(f"📊 Dashboard: {dashboard_url}", flush=True)
+
     app = builder.post_init(post_init).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
@@ -352,5 +368,5 @@ if __name__ == '__main__':
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
 
     import yt_dlp
-    print(f"Bot đang chạy (Hybrid Mode)... [yt-dlp {yt_dlp.version.__version__}]")
+    print(f"Bot đang chạy (Hybrid Mode)... [yt-dlp {yt_dlp.version.__version__}]", flush=True)
     app.run_polling()
