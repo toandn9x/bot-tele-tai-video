@@ -108,6 +108,9 @@
   .colchart .bar { transition: filter .1s; }
   .colchart .hit:hover + .bar, .colchart .hit:focus + .bar { filter: brightness(1.15); }
   .colchart .hit { outline: none; }
+  /* cột và nhãn vẽ đè lên vùng hit — phải cho xuyên chuột, không thì hover
+     vào đúng thân cột sẽ mất tooltip (sự kiện rơi vào path thay vì hit) */
+  .colchart .bar, .colchart text { pointer-events: none; }
 
   /* thanh ngang nền tảng */
   .platrow { display: grid; grid-template-columns: 110px 1fr 44px; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 13px; }
