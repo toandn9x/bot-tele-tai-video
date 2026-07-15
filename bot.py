@@ -404,7 +404,9 @@ async def keep_alive(base_url, minutes):
         await asyncio.sleep(minutes * 60)
         try:
             async with httpx.AsyncClient(timeout=30) as client:
-                await client.get(url)
+                r = await client.get(url)
+            if r.status_code == 200:
+                stats.record_ping()
         except Exception as e:
             logger.warning(f"keep-alive ping lỗi: {e}")
 

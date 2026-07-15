@@ -11,6 +11,17 @@ START_TIME = time.time()
 
 _lock = threading.Lock()
 
+# Đếm số lần keep-alive tự ping (chỉ trong bộ nhớ, reset mỗi lần khởi động lại)
+_ping = {'count': 0, 'last': None}
+
+
+def record_ping():
+    """keep-alive gọi mỗi lần tự ping thành công."""
+    with _lock:
+        _ping['count'] += 1
+        _ping['last'] = datetime.now().strftime('%H:%M:%S %d/%m')
+        return _ping['count']
+
 _PLATFORM_PATTERNS = [
     ('youtu', 'YouTube'),
     ('tiktok', 'TikTok'),
@@ -100,6 +111,9 @@ def snapshot():
     today = datetime.now().strftime('%Y-%m-%d')
     today_counts = data['daily'].get(today, {'success': 0, 'failed': 0})
 
+    with _lock:
+        ping = dict(_ping)
+
     return {
         'totals': totals,
         'rate': round(totals['success'] / done * 100) if done else None,
@@ -108,4 +122,5 @@ def snapshot():
         'platforms': data['platforms'],
         'recent': data['recent'],
         'uptime_seconds': int(time.time() - START_TIME),
+        'keepalive': ping,
     }

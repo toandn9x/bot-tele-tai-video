@@ -189,7 +189,7 @@
   </div>
 
   <div id="tooltip"></div>
-  <footer>Made with 🍜 bởi bot của Toandn · tự làm mới mỗi 4 giây</footer>
+  <footer>Made with 🍜 bởi bot của Toandn · tự làm mới mỗi 4 giây<span id="ka"></span></footer>
 
 <script>
 (() => {
@@ -417,6 +417,13 @@
 
       $('live').classList.remove('offline');
       $('liveText').textContent = 'trực tuyến · hoạt động ' + fmtUp(s.uptime_seconds);
+
+      const ka = s.keepalive || {};
+      if (ka.count) {
+        $('ka').textContent = ` · 🔄 keep-alive ${ka.count} lần` + (ka.last ? ` (${ka.last})` : '');
+      } else {
+        $('ka').textContent = ' · 🔄 keep-alive: chưa ping';
+      }
     } catch (err) {
       $('live').classList.add('offline');
       $('liveText').textContent = 'mất kết nối với bot 😴';
