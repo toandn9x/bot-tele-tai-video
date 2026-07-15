@@ -69,6 +69,12 @@ Repo đã có sẵn `Dockerfile` (kèm FFmpeg) và `render.yaml`:
 3. Thêm biến môi trường `TELEGRAM_BOT_TOKEN` trong tab **Environment**.
 4. Deploy xong, dashboard chính là trang chủ của service: `https://<tên-app>.onrender.com`.
 
+**Cloudflare WARP (lách chặn YouTube trên server):**
+- YouTube chặn IP datacenter; Dockerfile đã cài sẵn Cloudflare WARP, `entrypoint.sh` bật WARP ở chế độ proxy và **chỉ định tuyến YouTube qua đó** (TikTok/Douyin/Facebook vẫn đi thẳng).
+- Bật/tắt bằng biến `USE_WARP` (mặc định `1`). Muốn tắt nhanh: đặt `USE_WARP=0` trong Environment rồi deploy lại — không cần sửa code.
+- Nếu WARP không kết nối được, bot vẫn chạy bình thường (chỉ YouTube có thể bị chặn), không làm hỏng nền tảng khác.
+- ⚠️ *Đây là mẹo miễn phí, không đảm bảo bền — YouTube có thể siết dải IP Cloudflare bất cứ lúc nào. Khi đó quay lại dùng cookies hoặc chạy máy nhà.*
+
 **Lưu ý quan trọng:**
 - **Không chạy bot trên máy local song song với Render** — hai instance cùng polling sẽ báo lỗi `Conflict` liên tục.
 - **Gói Free của Render tự "ngủ" sau 15 phút không có traffic** → bot sẽ dừng nhận tin nhắn. Cách khắc phục miễn phí: dùng [UptimeRobot](https://uptimerobot.com) ping URL dashboard (`https://<tên-app>.onrender.com/api/stats`) mỗi 5 phút.

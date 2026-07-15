@@ -19,6 +19,18 @@ def _cookies_path():
             return p
     return None
 
+
+def _proxy_for(url):
+    """
+    Proxy (nếu có PROXY_URL) CHỈ áp dụng cho YouTube — nơi bị chặn IP datacenter.
+    TikTok/Douyin/Facebook đi thẳng, không phụ thuộc proxy nên WARP hỏng cũng
+    không ảnh hưởng các nền tảng đang chạy tốt.
+    """
+    proxy = os.getenv('PROXY_URL')
+    if proxy and ('youtube.com' in url.lower() or 'youtu.be' in url.lower()):
+        return proxy
+    return None
+
 if HAS_FFMPEG:
     # Không giới hạn ext=mp4 để lấy được cả 4K/VP9/AV1 (chỉ có bản webm);
     # ưu tiên audio m4a để merge vào mp4 mượt nhất, không có thì lấy audio tốt nhất
@@ -31,7 +43,7 @@ else:
                    "Hãy cài FFmpeg hoặc deploy bằng Dockerfile kèm sẵn.")
 
 
-def _build_opts(extra=None):
+def _build_opts(extra=None, url=None):
     opts = {
         'quiet': True,
         'no_warnings': True,
@@ -41,6 +53,10 @@ def _build_opts(extra=None):
     cookies = _cookies_path()
     if cookies:
         opts['cookiefile'] = cookies
+    if url:
+        proxy = _proxy_for(url)
+        if proxy:
+            opts['proxy'] = proxy
     if extra:
         opts.update(extra)
     return opts
@@ -62,7 +78,7 @@ def get_video_info(url):
     Trả về (best_size_mb, title, formats) — best_size_mb = 0 nếu không rõ.
     """
     try:
-        with yt_dlp.YoutubeDL(_build_opts({'format': BEST_FORMAT})) as ydl:
+        with yt_dlp.YoutubeDL(_build_opts({'format': BEST_FORMAT}, url=url)) as ydl:
             info = ydl.extract_info(url, download=False)
     except yt_dlp.utils.DownloadError as e:
         if _douyin_blocked(url, e):
@@ -100,7 +116,7 @@ def _download(url, format_spec, download_dir, progress_hook=None):
     if progress_hook:
         extra['progress_hooks'] = [progress_hook]
 
-    with yt_dlp.YoutubeDL(_build_opts(extra)) as ydl:
+    with yt_dlp.YoutubeDL(_build_opts(extra, url=url)) as ydl:
         info = ydl.extract_info(url, download=True)
         # yt-dlp trả sẵn đường dẫn cuối cùng (sau khi merge/đổi đuôi)
         downloads = info.get('requested_downloads') or []
@@ -126,7 +142,7 @@ def _extract_audio(target_url, download_dir, progress_hook=None, outtmpl=None, t
     if progress_hook:
         extra['progress_hooks'] = [progress_hook]
 
-    with yt_dlp.YoutubeDL(_build_opts(extra)) as ydl:
+    with yt_dlp.YoutubeDL(_build_opts(extra, url=target_url)) as ydl:
         info = ydl.extract_info(target_url, download=True)
         downloads = info.get('requested_downloads') or []
         if downloads and downloads[0].get('filepath'):
