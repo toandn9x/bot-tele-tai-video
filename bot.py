@@ -8,7 +8,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotComm
 from telegram.constants import ChatAction
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from dotenv import load_dotenv
-from downloader import get_video_info, download_video, download_specific_format, download_audio, HAS_FFMPEG
+from downloader import get_video_info, download_video, download_height, download_audio, HAS_FFMPEG
 import stats
 from dashboard import start_dashboard
 
@@ -254,9 +254,10 @@ async def process_url(update: Update, context: ContextTypes.DEFAULT_TYPE, url: s
 
     for fmt in formats:
         size_str = f"  ·  {fmt['filesize'] / 1048576:.0f}MB" if fmt['filesize'] else ""
+        # Mang theo HEIGHT (không phải format_id) — bot tải H.264 theo độ phân giải
         keyboard.append([InlineKeyboardButton(
             f"📺 {fmt['height']}p{size_str}",
-            callback_data=f"dl|{fmt['format_id']}|{token}"
+            callback_data=f"dl|h{fmt['height']}|{token}"
         )])
 
     if HAS_FFMPEG:
@@ -298,11 +299,13 @@ async def download_and_send(chat_id, context, url, status_msg, format_id, title=
         async with download_semaphore:
             hook = make_progress_hook(asyncio.get_running_loop(), status_msg, title)
             if format_id == "best":
-                file_path, title = await asyncio.to_thread(download_video, url, DOWNLOAD_DIR, hook)
+                file_path, title = await asyncio.to_thread(download_video, url, DOWNLOAD_DIR, hook, True)
             elif format_id == "mp3":
                 file_path, title = await asyncio.to_thread(download_audio, url, DOWNLOAD_DIR, hook)
+            elif format_id.startswith("h") and format_id[1:].isdigit():
+                file_path, title = await asyncio.to_thread(download_height, url, int(format_id[1:]), DOWNLOAD_DIR, hook)
             else:
-                file_path, title = await asyncio.to_thread(download_specific_format, url, format_id, DOWNLOAD_DIR, hook)
+                file_path, title = await asyncio.to_thread(download_video, url, DOWNLOAD_DIR, hook, True)
 
         file_size = os.path.getsize(file_path) / (1024 * 1024)
         if file_size > TELEGRAM_LIMIT_MB:
@@ -330,19 +333,28 @@ async def download_and_send(chat_id, context, url, status_msg, format_id, title=
         stop_anim = start_animation(context.bot, chat_id, status_msg,
                                     f"Đang gửi: {title} ({file_size:.1f}MB)", action)
         try:
-            with open(file_path, 'rb') as f:
-                if is_video:
-                    await context.bot.send_video(
-                        chat_id=chat_id,
-                        video=f,
-                        caption=caption,
-                        supports_streaming=True
-                    )
-                elif is_image:
+            if is_video:
+                try:
+                    # Telegram xử lý server-side video có thể treo với codec lạ →
+                    # bọc timeout, thất bại thì gửi dạng file để chắc chắn đến tay
+                    with open(file_path, 'rb') as f:
+                        await asyncio.wait_for(
+                            context.bot.send_video(chat_id=chat_id, video=f,
+                                                   caption=caption, supports_streaming=True),
+                            timeout=150,
+                        )
+                except Exception as e:
+                    logger.warning(f"send_video lỗi/treo, chuyển gửi dạng file: {e}")
+                    with open(file_path, 'rb') as f:
+                        await context.bot.send_document(chat_id=chat_id, document=f, caption=caption)
+            elif is_image:
+                with open(file_path, 'rb') as f:
                     await context.bot.send_photo(chat_id=chat_id, photo=f, caption=caption)
-                elif is_audio:
+            elif is_audio:
+                with open(file_path, 'rb') as f:
                     await context.bot.send_audio(chat_id=chat_id, audio=f, caption=caption, title=title[:60])
-                else:
+            else:
+                with open(file_path, 'rb') as f:
                     await context.bot.send_document(chat_id=chat_id, document=f, caption=caption)
         finally:
             await stop_anim()

@@ -43,6 +43,20 @@ else:
                    "Hãy cài FFmpeg hoặc deploy bằng Dockerfile kèm sẵn.")
 
 
+def _tg_format(max_height=1080):
+    """
+    Format cho video gửi qua Telegram: ưu tiên H.264 (avc1) + AAC trong mp4 —
+    Telegram phát inline mượt nhất. AV1/VP9 hay gây lỗi/treo khi send_video.
+    Cap ≤1080p (bản lớn hơn cũng vượt 50MB của bot). Không có FFmpeg thì lấy
+    single-file mp4 sẵn.
+    """
+    if not HAS_FFMPEG:
+        return f'best[ext=mp4][height<={max_height}]/best[ext=mp4]/best'
+    return (f'bestvideo[vcodec^=avc1][height<={max_height}]+bestaudio[ext=m4a]/'
+            f'best[vcodec^=avc1][height<={max_height}]/'
+            f'best[ext=mp4][height<={max_height}]/best[height<={max_height}]/best')
+
+
 def _build_opts(extra=None, url=None):
     opts = {
         'quiet': True,
@@ -261,10 +275,15 @@ def _download_douyin_share(url, download_dir, progress_hook=None):
 # ---------- hết Plan B Douyin ----------
 
 
-def download_video(url, download_dir='downloads', progress_hook=None):
-    """Tải bản chất lượng tốt nhất."""
+def download_video(url, download_dir='downloads', progress_hook=None, telegram=False):
+    """
+    Tải bản chất lượng tốt nhất.
+    telegram=True → ưu tiên H.264 ≤1080p để Telegram phát inline được (bot).
+    telegram=False → best thật sự, cho phép AV1/VP9 4K (web tải thẳng).
+    """
+    fmt = _tg_format() if telegram else BEST_FORMAT
     try:
-        return _download(url, BEST_FORMAT, download_dir, progress_hook)
+        return _download(url, fmt, download_dir, progress_hook)
     except yt_dlp.utils.DownloadError as e:
         if _douyin_blocked(url, e):
             logger.info(f"Douyin chặn yt-dlp, chuyển sang trang share: {url}")
@@ -272,8 +291,13 @@ def download_video(url, download_dir='downloads', progress_hook=None):
         raise
 
 
+def download_height(url, height, download_dir='downloads', progress_hook=None):
+    """Tải video ≤ height cụ thể, ưu tiên H.264 (cho bot — Telegram phát được)."""
+    return _download(url, _tg_format(height), download_dir, progress_hook)
+
+
 def download_specific_format(url, format_id, download_dir='downloads', progress_hook=None):
-    """Tải theo format_id người dùng chọn, tự merge thêm audio tốt nhất."""
+    """Tải theo format_id người dùng chọn (web — giữ đúng format best-quality)."""
     if HAS_FFMPEG:
         return _download(url, f'{format_id}+bestaudio/best', download_dir, progress_hook)
     # Thiếu FFmpeg: format video-only sẽ không có tiếng — ưu tiên bản có sẵn audio
