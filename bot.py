@@ -392,6 +392,23 @@ async def error_handler(update, context):
     logger.error("Lỗi không xử lý được", exc_info=err)
 
 
+async def keep_alive(base_url, minutes):
+    """
+    Tự ping URL công khai của chính mình định kỳ để Render free không ngủ.
+    Request đi qua edge của Render nên tính là traffic VÀO, reset đồng hồ ngủ
+    (Telegram không ping định kỳ nên không tự giữ server thức được).
+    """
+    import httpx
+    url = base_url.rstrip('/') + '/api/stats'
+    while True:
+        await asyncio.sleep(minutes * 60)
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                await client.get(url)
+        except Exception as e:
+            logger.warning(f"keep-alive ping lỗi: {e}")
+
+
 if __name__ == '__main__':
     if not TOKEN:
         print("Lỗi: chưa cấu hình TELEGRAM_BOT_TOKEN trong file .env!")
@@ -453,6 +470,11 @@ if __name__ == '__main__':
                 allowed_updates=Update.ALL_TYPES,
                 drop_pending_updates=True,
             )
+            # Tự ping để không ngủ (KEEP_ALIVE_MINUTES=0 để tắt)
+            ka = int(os.getenv("KEEP_ALIVE_MINUTES", "10"))
+            if ka > 0:
+                asyncio.create_task(keep_alive(webhook_base, ka))
+                print(f"⏰ Keep-alive: tự ping mỗi {ka} phút", flush=True)
             print(f"Bot đang chạy (Webhook) {version_note}", flush=True)
             await asyncio.Event().wait()  # giữ tiến trình sống
 

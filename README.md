@@ -81,7 +81,10 @@ Repo đã có sẵn `Dockerfile` (kèm FFmpeg) và `render.yaml`:
 
 **Lưu ý quan trọng:**
 - **Không chạy bot local song song với instance trên Render** — dù webhook đã hết xung đột polling, chạy 2 nơi cùng token vẫn dễ loạn.
-- **Gói Free của Render tự "ngủ" sau 15 phút không traffic**: webhook giúp tin nhắn tự đánh thức, nhưng **tin đầu sau khi ngủ có thể trễ ~30-60s** (cold start). Muốn phản hồi tức thì, vẫn nên [UptimeRobot](https://uptimerobot.com) ping `https://<tên-app>.onrender.com/api/stats` mỗi 5 phút.
+- **Gói Free của Render tự "ngủ" sau 15 phút không traffic** (Telegram không ping định kỳ nên không tự giữ thức được):
+  - Bot có sẵn **keep-alive**: tự ping URL công khai của chính nó mỗi `KEEP_ALIVE_MINUTES` phút (mặc định 10, đặt `0` để tắt) → không cần dịch vụ ngoài. *Lưu ý: chạy 24/7 dùng gần hết 750 giờ/tháng của gói free — hợp lý nếu chỉ có 1 service.*
+  - Hoặc dùng [UptimeRobot](https://uptimerobot.com) ping `https://<tên-app>.onrender.com/api/stats` mỗi 5 phút (bền hơn: đánh thức cả khi service crash/redeploy).
+  - Không bật gì thì tin nhắn vẫn đánh thức bot, nhưng **tin đầu sau khi ngủ trễ ~30-60s** (cold start; Telegram tự gửi lại nên không mất).
 - Ổ đĩa của Render là tạm thời: `stats.json` sẽ reset mỗi lần deploy/restart.
 - Cần `cookies.txt`? **Đừng commit nó lên repo public!** Vào Render → Environment → **Secret Files** → tạo file tên `cookies.txt` với nội dung cookies, mount path để mặc định.
 - Dashboard trên Render là công khai (ai có link đều xem được thống kê). Muốn tắt: đặt biến `DASHBOARD_PORT=0` — nhưng khi đó Render Web Service sẽ fail port scan, hãy chuyển service sang loại **Background Worker** (mất phí) hoặc chấp nhận dashboard công khai.
