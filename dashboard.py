@@ -5,6 +5,7 @@ Dùng http.server có sẵn của Python — không cần cài thêm gì.
 import json
 import logging
 import os
+import secrets
 import shutil
 import threading
 import urllib.parse
@@ -160,15 +161,18 @@ class _Handler(BaseHTTPRequestHandler):
                           'text/plain; charset=utf-8', 429)
             return
 
+        # Mỗi lượt tải một thư mục riêng — tránh hai request cùng URL đè tên
+        # file lên nhau (đặc biệt Douyin dùng tên cố định douyin_<id>)
+        job_dir = os.path.join(WEB_DL_DIR, secrets.token_hex(6))
         file_path = None
         headers_sent = False
         try:
             if fmt == 'best':
-                file_path, title = downloader.download_video(url, WEB_DL_DIR)
+                file_path, title = downloader.download_video(url, job_dir)
             elif fmt == 'mp3':
-                file_path, title = downloader.download_audio(url, WEB_DL_DIR)
+                file_path, title = downloader.download_audio(url, job_dir)
             else:
-                file_path, title = downloader.download_specific_format(url, fmt, WEB_DL_DIR)
+                file_path, title = downloader.download_specific_format(url, fmt, job_dir)
 
             size = os.path.getsize(file_path)
             ext = os.path.splitext(file_path)[1].lower()
@@ -198,8 +202,7 @@ class _Handler(BaseHTTPRequestHandler):
                 self._respond(_friendly(url, e).encode('utf-8'), 'text/plain; charset=utf-8', 500)
         finally:
             _dl_sem.release()
-            if file_path and os.path.exists(file_path):
-                os.remove(file_path)
+            shutil.rmtree(job_dir, ignore_errors=True)
 
     def log_message(self, format, *args):
         pass  # không xả log request vào console của bot

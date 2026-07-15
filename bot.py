@@ -381,6 +381,16 @@ async def download_and_send(chat_id, context, url, status_msg, format_id, title=
             os.remove(file_path)
 
 
+async def error_handler(update, context):
+    """Nuốt các lỗi nền ồn ào (nhất là Conflict khi có 2 instance polling)."""
+    from telegram.error import Conflict
+    err = context.error
+    if isinstance(err, Conflict):
+        logger.warning("Conflict: có instance bot khác đang chạy. Chỉ nên chạy 1 bot cho mỗi token.")
+        return
+    logger.error("Lỗi không xử lý được", exc_info=err)
+
+
 if __name__ == '__main__':
     if not TOKEN:
         print("Lỗi: chưa cấu hình TELEGRAM_BOT_TOKEN trong file .env!")
@@ -417,6 +427,7 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("author", author_command))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
+    app.add_error_handler(error_handler)
 
     import yt_dlp
     print(f"Bot đang chạy (Hybrid Mode)... [yt-dlp {yt_dlp.version.__version__}]", flush=True)
