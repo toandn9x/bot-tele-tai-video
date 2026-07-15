@@ -15,7 +15,8 @@ Bot Telegram mạnh mẽ hỗ trợ tải Video và Ảnh từ nhiều nguồn (
 - **Dán nguyên share text**: Không cần cắt link — dán cả đoạn "复制打开抖音..." bot tự tìm URL.
 - **Tự động dọn dẹp**: Xóa file tạm trên máy tính sau khi gửi để tiết kiệm bộ nhớ.
 - **Chat gọn gàng**: Sau khi gửi video, bot tự xóa tin nhắn link gốc và tin nhắn trạng thái — link nguồn được giữ trong caption.
-- **📊 Dashboard thống kê**: Web dashboard local tại `http://127.0.0.1:8350` — lượt tải theo ngày, tỉ lệ thành công, thống kê nền tảng, danh sách tải gần đây. Tự làm mới mỗi 4 giây, có dark mode.
+- **🌐 Web tải trực tiếp**: Trang chủ (`http://127.0.0.1:8350`) là giao diện tải video kiểu cobalt.tools — dán link, chọn chất lượng, file tải thẳng về máy. Không cần Telegram.
+- **📊 Dashboard thống kê**: Tại `/stats` — lượt tải theo ngày, tỉ lệ thành công, thống kê nền tảng, danh sách tải gần đây. Tự làm mới mỗi 4 giây, có dark mode.
 
 ## 🛠️ Cài đặt
 
@@ -49,8 +50,11 @@ py bot.py
 - Gửi 1 link hoặc nhiều link (mỗi link 1 dòng) vào bot.
 - Làm theo hướng dẫn trên menu nếu video quá lớn.
 
-## 📊 Dashboard
-- Bot tự mở dashboard tại `http://127.0.0.1:8350` khi khởi động (chỉ truy cập được từ máy chạy bot).
+## 🌐 Web & Dashboard
+- Khi khởi động, bot mở web server tại `http://127.0.0.1:8350`:
+  - **`/`** — trang tải video trực tiếp (dán link → tải file về máy, không cần Telegram).
+  - **`/stats`** — dashboard thống kê.
+- Web chỉ tải từ các nền tảng trong danh sách cho phép (YouTube, TikTok, Douyin, Facebook, Instagram, X) và giới hạn 2 lượt tải cùng lúc để không quá tải server.
 - Đổi port bằng biến môi trường `DASHBOARD_PORT` trong `.env`; đặt `DASHBOARD_PORT=0` để tắt.
 - Thống kê lưu trong `stats.json` (không đẩy lên git).
 

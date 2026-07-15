@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>📥 Tải Video Online — sạch, không watermark</title>
+<script>
+  // chạy trước khi vẽ trang để ?theme=dark/light không bị nháy theme
+  const _t = new URLSearchParams(location.search).get('theme');
+  if (_t) document.documentElement.dataset.theme = _t;
+</script>
+<style>
+  :root {
+    --page:     #f9f9f7;
+    --surface:  #fcfcfb;
+    --ink:      #0b0b0b;
+    --ink-2:    #52514e;
+    --muted:    #898781;
+    --border:   rgba(11,11,11,0.10);
+    --baseline: #c3c2b7;
+    --accent:   #2a78d6;
+    --good:     #006300;
+    --critical: #d03b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --page:     #0d0d0d;
+      --surface:  #1a1a19;
+      --ink:      #ffffff;
+      --ink-2:    #c3c2b7;
+      --muted:    #898781;
+      --border:   rgba(255,255,255,0.10);
+      --baseline: #383835;
+      --accent:   #3987e5;
+      --good:     #0ca30c;
+    }
+  }
+  :root[data-theme="dark"] {
+    --page:     #0d0d0d;
+    --surface:  #1a1a19;
+    --ink:      #ffffff;
+    --ink-2:    #c3c2b7;
+    --muted:    #898781;
+    --border:   rgba(255,255,255,0.10);
+    --baseline: #383835;
+    --accent:   #3987e5;
+    --good:     #0ca30c;
+  }
+
+  * { box-sizing: border-box; margin: 0; }
+  html { background: var(--page); }
+  body { min-height: 100vh; }
+  body {
+    background: var(--page);
+    color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    padding: 24px 16px;
+    gap: 28px;
+  }
+
+  main { width: 100%; max-width: 640px; display: flex; flex-direction: column; align-items: center; gap: 22px; }
+
+  .logo { font-size: 44px; line-height: 1; }
+  h1 { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; }
+  .tagline { font-size: 14px; color: var(--ink-2); text-align: center; }
+  .tagline .plats { color: var(--muted); font-size: 13px; display: block; margin-top: 6px; }
+
+  .inputrow {
+    width: 100%; display: flex; gap: 8px;
+    background: var(--surface);
+    border: 1.5px solid var(--border);
+    border-radius: 14px;
+    padding: 8px;
+    transition: border-color .15s;
+  }
+  .inputrow:focus-within { border-color: var(--accent); }
+  .inputrow input {
+    flex: 1; min-width: 0;
+    background: none; border: none; outline: none;
+    color: var(--ink); font-size: 15px; padding: 8px 10px;
+    font-family: inherit;
+  }
+  .inputrow input::placeholder { color: var(--muted); }
+  .btn {
+    border: none; border-radius: 9px; cursor: pointer;
+    font-family: inherit; font-size: 14px; font-weight: 600;
+    padding: 9px 16px; white-space: nowrap;
+    transition: filter .12s, background .12s;
+  }
+  .btn:hover { filter: brightness(1.08); }
+  .btn:active { filter: brightness(.95); }
+  .btn-ghost { background: none; color: var(--ink-2); border: 1px solid var(--border); }
+  .btn-main  { background: var(--accent); color: #fff; }
+  .btn:disabled { opacity: .5; cursor: wait; }
+
+  #status { width: 100%; min-height: 24px; }
+
+  .spin { display: flex; align-items: center; gap: 10px; color: var(--ink-2); font-size: 14px; justify-content: center; }
+  .spin .ring {
+    width: 16px; height: 16px; border-radius: 50%;
+    border: 2px solid var(--border); border-top-color: var(--accent);
+    animation: rot .8s linear infinite;
+  }
+  @keyframes rot { to { transform: rotate(360deg) } }
+
+  .error {
+    width: 100%; text-align: center; font-size: 14px; color: var(--critical);
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 14px 16px;
+  }
+
+  .result {
+    width: 100%;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; padding: 18px;
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  .result .vtitle { font-size: 15px; font-weight: 600; line-height: 1.4; word-break: break-word; }
+  .result .meta { font-size: 12.5px; color: var(--muted); }
+  .choices { display: flex; flex-wrap: wrap; gap: 8px; }
+  .choices .btn-main { font-size: 13.5px; }
+  .choices .btn-ghost { font-size: 13.5px; color: var(--ink); }
+  .hint { font-size: 12.5px; color: var(--good); }
+
+  footer { display: flex; gap: 18px; font-size: 13px; flex-wrap: wrap; justify-content: center; }
+  footer a { color: var(--muted); text-decoration: none; border-bottom: 1px dotted var(--baseline); padding-bottom: 1px; }
+  footer a:hover { color: var(--ink-2); }
+</style>
+</head>
+<body>
+  <main>
+    <div class="logo">📥</div>
+    <div>
+      <h1 style="text-align:center">tải video online</h1>
+      <p class="tagline">dán link — nhận video sạch, không watermark, chất lượng cao nhất
+        <span class="plats">YouTube · TikTok · Douyin · Facebook · Instagram · X</span>
+      </p>
+    </div>
+
+    <div class="inputrow">
+      <input id="url" type="url" placeholder="dán link vào đây..." autocomplete="off" spellcheck="false" autofocus>
+      <button class="btn btn-ghost" id="pasteBtn" title="Dán từ clipboard">📋 dán</button>
+      <button class="btn btn-main" id="goBtn">tải ⬇️</button>
+    </div>
+
+    <div id="status"></div>
+  </main>
+
+  <footer>
+    <a href="/stats">📊 thống kê</a>
+    <a href="https://telegram.me/taivideoonlinebot" target="_blank" rel="noopener">💬 bot telegram</a>
+  </footer>
+
+<script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const input = $('url'), goBtn = $('goBtn'), status = $('status');
+  let currentUrl = '';
+
+  function setStatus(node) { status.textContent = ''; if (node) status.appendChild(node); }
+
+  function el(tag, cls, text) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text) n.textContent = text;
+    return n;
+  }
+
+  function showSpinner(text) {
+    const box = el('div', 'spin');
+    box.appendChild(el('div', 'ring'));
+    box.appendChild(el('span', '', text));
+    setStatus(box);
+  }
+
+  function showError(msg) {
+    setStatus(el('div', 'error', msg));
+  }
+
+  function dlHref(fmt) {
+    return '/api/download?url=' + encodeURIComponent(currentUrl) + '&format=' + encodeURIComponent(fmt);
+  }
+
+  function startDownload(fmt, card) {
+    // điều hướng ẩn qua iframe để trang không bị rời đi; trình duyệt sẽ
+    // tự hiện hộp thoại lưu file khi server chuẩn bị xong
+    let frame = $('dlframe');
+    if (!frame) {
+      frame = document.createElement('iframe');
+      frame.id = 'dlframe'; frame.style.display = 'none';
+      document.body.appendChild(frame);
+    }
+    frame.src = dlHref(fmt);
+    const old = card.querySelector('.hint');
+    if (old) old.remove();
+    card.appendChild(el('div', 'hint',
+      '🚀 Đang chuẩn bị file trên server — trình duyệt sẽ tự tải xuống khi xong (video dài có thể mất 1-2 phút, đừng đóng trang).'));
+  }
+
+  function showResult(d) {
+    const card = el('div', 'result');
+    card.appendChild(el('div', 'vtitle', d.title || 'Video'));
+    const metaBits = [d.platform];
+    if (d.size_mb) metaBits.push('~' + d.size_mb + ' MB (bản đẹp nhất)');
+    card.appendChild(el('div', 'meta', metaBits.filter(Boolean).join(' · ')));
+
+    const choices = el('div', 'choices');
+    const bestBtn = el('button', 'btn btn-main', '⬇️ tải bản đẹp nhất' + (d.size_mb ? ` (~${d.size_mb}MB)` : ''));
+    bestBtn.addEventListener('click', () => startDownload('best', card));
+    choices.appendChild(bestBtn);
+
+    (d.formats || []).forEach(f => {
+      const label = f.height + 'p' + (f.size_mb ? ` · ${f.size_mb}MB` : '');
+      const b = el('button', 'btn btn-ghost', label);
+      b.addEventListener('click', () => startDownload(f.format_id, card));
+      choices.appendChild(b);
+    });
+
+    card.appendChild(choices);
+    setStatus(card);
+  }
+
+  async function go() {
+    const raw = input.value.trim();
+    const m = raw.match(/https?:\/\/\S+/);
+    if (!m) { showError('Chưa thấy link nào — dán link video vào đã nhé 😅'); return; }
+    currentUrl = m[0].replace(/[.,;:!?)\]}>'"]+$/, '');
+
+    goBtn.disabled = true;
+    showSpinner('đang phân tích link...');
+    try {
+      const res = await fetch('/api/resolve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: currentUrl }),
+      });
+      const d = await res.json();
+      if (d.ok) showResult(d); else showError(d.error || 'Có lỗi xảy ra.');
+    } catch (e) {
+      showError('Mất kết nối tới server — thử lại sau nhé.');
+    } finally {
+      goBtn.disabled = false;
+    }
+  }
+
+  goBtn.addEventListener('click', go);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+  $('pasteBtn').addEventListener('click', async () => {
+    try {
+      input.value = await navigator.clipboard.readText();
+      go();
+    } catch (e) {
+      input.focus(); // trình duyệt chặn clipboard — người dùng tự Ctrl+V
+    }
+  });
+})();
+</script>
+</body>
+</html>
