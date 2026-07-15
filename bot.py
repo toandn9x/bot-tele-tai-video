@@ -52,6 +52,8 @@ def friendly_error(url, error):
         return ("🔒 Nội dung này yêu cầu đăng nhập.\n"
                 "Dùng tiện ích \"Get cookies.txt LOCALLY\" trên trình duyệt, xuất cookies của trang đó "
                 "và lưu thành file cookies.txt vào thư mục bot (không cần khởi động lại bot).")
+    if 'entity too large' in low or 'too large' in low:
+        return f"😢 File vượt giới hạn {TELEGRAM_LIMIT_MB}MB của Telegram Bot nên gửi thất bại. Hãy thử chất lượng thấp hơn."
     if 'unsupported url' in low:
         return "⚠️ Trang này chưa được yt-dlp hỗ trợ tải."
     if 'unavailable' in low or 'removed' in low or 'does not exist' in low:
@@ -235,6 +237,16 @@ async def process_url(update: Update, context: ContextTypes.DEFAULT_TYPE, url: s
     finally:
         await stop_anim()
 
+    # Biết trước quá nặng mà lại không có menu chất lượng để lùi → báo luôn, khỏi tải
+    if best_size > TELEGRAM_LIMIT_MB and not formats:
+        await status_msg.edit_text(
+            f"😢 {title}\nVideo nặng ~{best_size:.0f}MB, vượt giới hạn {TELEGRAM_LIMIT_MB}MB "
+            f"của Telegram Bot — không gửi được."
+        )
+        stats.record(url, ok=False, title=title)
+        await finish_job_item(job, False)
+        return
+
     # Bản tốt nhất đủ nhỏ (hoặc không có format nào để chọn) → tải luôn
     if 0 < best_size <= TELEGRAM_LIMIT_MB or not formats:
         size_note = f" (~{best_size:.1f}MB)" if best_size else ""
@@ -293,10 +305,14 @@ async def download_and_send(chat_id, context, url, status_msg, format_id, title=
 
         file_size = os.path.getsize(file_path) / (1024 * 1024)
         if file_size > TELEGRAM_LIMIT_MB:
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=f"⚠️ File nặng {file_size:.1f}MB, vượt giới hạn {TELEGRAM_LIMIT_MB}MB của Telegram. Có thể gửi thất bại."
+            # 50MB là giới hạn cứng của Telegram Bot API — cố gửi chỉ tốn
+            # thời gian upload rồi nhận "Request Entity Too Large"
+            await status_msg.edit_text(
+                f"😢 {title}\nFile nặng {file_size:.1f}MB, vượt giới hạn {TELEGRAM_LIMIT_MB}MB "
+                f"của Telegram Bot nên không gửi được. Hãy thử chọn chất lượng thấp hơn (nếu có menu)."
             )
+            stats.record(url, ok=False, title=title)
+            return False
 
         # Tin nhắn link gốc sẽ bị xóa nên giữ lại link trong caption
         caption = f"{title[:700]}\n\n🔗 {url}"
@@ -333,7 +349,15 @@ async def download_and_send(chat_id, context, url, status_msg, format_id, title=
 
     except Exception as e:
         logger.error(f"Error: {e}")
-        await status_msg.edit_text(friendly_error(url, e))
+        try:
+            await status_msg.edit_text(friendly_error(url, e))
+        except Exception:
+            # edit thất bại (pool nghẽn, message bị xóa...) — không được nuốt
+            # luôn cả việc báo lỗi, thử gửi tin nhắn mới
+            try:
+                await context.bot.send_message(chat_id=chat_id, text=friendly_error(url, e))
+            except Exception:
+                logger.exception("Không báo được lỗi cho người dùng")
         stats.record(url, ok=False, title=title if title != 'video' else '')
         return False
     finally:
@@ -352,6 +376,10 @@ if __name__ == '__main__':
         .connect_timeout(30)
         .read_timeout(60)
         .write_timeout(300)  # Upload file lớn cần timeout dài hơn mặc định 20s
+        # Mặc định PTB chỉ có 1 connection + pool_timeout 1s — upload dài chiếm
+        # connection làm animation/edit_text văng PoolTimeout và treo trạng thái
+        .connection_pool_size(16)
+        .pool_timeout(30)
     )
     # PTB >= 20.7 tách riêng timeout cho media upload
     if hasattr(builder, 'media_write_timeout'):

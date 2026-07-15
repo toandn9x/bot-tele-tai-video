@@ -60,7 +60,7 @@ def get_video_info(url):
         if _douyin_blocked(url, e):
             # Plan B: lấy info từ trang share; formats rỗng -> bot tải thẳng bản này
             share = _douyin_share_info(url)
-            return 0, share['title'], []
+            return _douyin_share_size_mb(share['url']), share['title'], []
         raise
 
     by_height = {}
@@ -157,6 +157,16 @@ def _douyin_share_info(url):
         'url': urls[0].replace('/playwm/', '/play/'),
         'id': str(item.get('aweme_id') or 'video'),
     }
+
+
+def _douyin_share_size_mb(play_url):
+    """Hỏi dung lượng file qua HEAD request để bot chặn sớm video quá 50MB."""
+    try:
+        head = httpx.head(play_url, headers={'User-Agent': DOUYIN_UA},
+                          follow_redirects=True, timeout=15)
+        return int(head.headers.get('content-length') or 0) / (1024 * 1024)
+    except Exception:
+        return 0
 
 
 def _download_douyin_share(url, download_dir, progress_hook=None):
