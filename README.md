@@ -35,10 +35,11 @@ Bot Telegram mạnh mẽ hỗ trợ tải Video và Ảnh từ nhiều nguồn (
    - Tạo file `.env` từ `.env.example`.
    - Điền `TELEGRAM_BOT_TOKEN` (lấy từ @BotFather).
 
-4. **Cách tải nội dung riêng tư (video private, reels giới hạn):**
-   - Sử dụng tiện ích "Get cookies.txt LOCALLY" trên trình duyệt.
-   - Xuất file cookies của Facebook/Instagram và lưu tên là `cookies.txt` vào thư mục gốc của bot (bot tự nhận, không cần khởi động lại).
-   - ⚠️ *Lưu ý: Facebook **Stories** hiện chưa được yt-dlp hỗ trợ, kể cả khi có cookies. Chỉ tải được video/reel/bài đăng.*
+4. **Cách tải nội dung riêng tư / YouTube trên server (cookies.txt):**
+   - Sử dụng tiện ích "Get cookies.txt LOCALLY" trên trình duyệt, xuất cookies rồi lưu thành `cookies.txt`.
+   - Bot tự tìm cookies theo thứ tự: biến môi trường `COOKIES_FILE` → `cookies.txt` trong thư mục bot → `/etc/secrets/cookies.txt` (Render Secret Files).
+   - ⚠️ *Facebook **Stories** chưa được yt-dlp hỗ trợ kể cả khi có cookies.*
+   - ⚠️ *Chạy trên máy chủ (Render, VPS...): **YouTube thường chặn IP datacenter** và bắt đăng nhập "xác minh không phải bot". Đây không phải video riêng tư — cần thêm `cookies.txt` của YouTube (nên dùng **tài khoản phụ**, vì hoạt động bất thường có thể khiến tài khoản bị khóa). Máy tính cá nhân thường tải YouTube bình thường không cần cookies.*
 
 ## 🚀 Khởi chạy
 

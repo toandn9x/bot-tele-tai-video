@@ -45,6 +45,11 @@ def friendly_error(url, error):
         return ("⚠️ Douyin chặn cả hai đường tải của bot — video có thể riêng tư, đã bị xóa, "
                 "hoặc là album ảnh.\nCó thể thử: mở douyin.com trên trình duyệt (không cần đăng nhập), "
                 "xuất cookies.txt và thêm vào bot.")
+    is_youtube = 'youtube.com' in url.lower() or 'youtu.be' in url.lower()
+    if is_youtube and ('sign in' in low or 'not a bot' in low or 'confirm' in low or 'cookie' in low):
+        return ("🤖 YouTube đang chặn máy chủ (bắt đăng nhập để xác minh không phải bot) — "
+                "đây KHÔNG phải video riêng tư.\nĐể tải YouTube trên server cần thêm cookies.txt "
+                "của một tài khoản (nên dùng tài khoản phụ). Máy tính cá nhân thường tải được bình thường.")
     if 'login' in low or 'cookie' in low or 'logged' in low or 'private' in low:
         if os.path.exists('cookies.txt'):
             return ("🔒 Nội dung yêu cầu đăng nhập nhưng cookies hiện tại không truy cập được.\n"

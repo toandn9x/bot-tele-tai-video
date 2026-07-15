@@ -51,6 +51,10 @@ def _friendly(url, error):
     low = str(error).lower()
     if 'douyin' in url.lower() and ('cookie' in low or 'login' in low):
         return 'Douyin đang chặn — video có thể riêng tư, đã bị xóa hoặc là album ảnh.'
+    if ('youtube' in url.lower() or 'youtu.be' in url.lower()) and (
+            'sign in' in low or 'not a bot' in low or 'confirm' in low or 'cookie' in low):
+        return ('YouTube đang chặn máy chủ (bắt xác minh không phải bot) — đây không phải video riêng tư. '
+                'Cần thêm cookies.txt của YouTube trên server để tải được.')
     if 'login' in low or 'cookie' in low or 'private' in low:
         return 'Nội dung này riêng tư hoặc yêu cầu đăng nhập — web không tải được.'
     if 'unsupported url' in low:

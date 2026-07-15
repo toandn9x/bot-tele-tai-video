@@ -9,8 +9,15 @@ import httpx  # có sẵn theo python-telegram-bot
 
 logger = logging.getLogger(__name__)
 
-COOKIES_FILE = 'cookies.txt'
 HAS_FFMPEG = bool(shutil.which('ffmpeg'))
+
+
+def _cookies_path():
+    """Tìm cookies.txt: biến COOKIES_FILE > thư mục bot > Render Secret Files."""
+    for p in (os.getenv('COOKIES_FILE'), 'cookies.txt', '/etc/secrets/cookies.txt'):
+        if p and os.path.exists(p):
+            return p
+    return None
 
 if HAS_FFMPEG:
     # Không giới hạn ext=mp4 để lấy được cả 4K/VP9/AV1 (chỉ có bản webm);
@@ -31,8 +38,9 @@ def _build_opts(extra=None):
         'noprogress': True,
         'noplaylist': True,
     }
-    if os.path.exists(COOKIES_FILE):
-        opts['cookiefile'] = COOKIES_FILE
+    cookies = _cookies_path()
+    if cookies:
+        opts['cookiefile'] = cookies
     if extra:
         opts.update(extra)
     return opts
