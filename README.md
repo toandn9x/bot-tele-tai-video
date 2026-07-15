@@ -82,7 +82,7 @@ Repo đã có sẵn `Dockerfile` (kèm FFmpeg) và `render.yaml`:
 **Lưu ý quan trọng:**
 - **Không chạy bot local song song với instance trên Render** — dù webhook đã hết xung đột polling, chạy 2 nơi cùng token vẫn dễ loạn.
 - **Gói Free của Render tự "ngủ" sau 15 phút không traffic** (Telegram không ping định kỳ nên không tự giữ thức được):
-  - Bot có sẵn **keep-alive**: tự ping URL công khai của chính nó mỗi `KEEP_ALIVE_MINUTES` phút (mặc định 10, đặt `0` để tắt) → không cần dịch vụ ngoài. *Lưu ý: chạy 24/7 dùng gần hết 750 giờ/tháng của gói free — hợp lý nếu chỉ có 1 service.*
+  - Bot có sẵn **keep-alive**: tự ping URL công khai của chính nó mỗi `KEEP_ALIVE_MINUTES` phút (mặc định 14, ngay dưới mốc ngủ 15 phút; đặt `0` để tắt) → không cần dịch vụ ngoài. *Lưu ý: chạy 24/7 dùng gần hết 750 giờ/tháng của gói free — hợp lý nếu chỉ có 1 service.*
   - Hoặc dùng [UptimeRobot](https://uptimerobot.com) ping `https://<tên-app>.onrender.com/api/stats` mỗi 5 phút (bền hơn: đánh thức cả khi service crash/redeploy).
   - Không bật gì thì tin nhắn vẫn đánh thức bot, nhưng **tin đầu sau khi ngủ trễ ~30-60s** (cold start; Telegram tự gửi lại nên không mất).
 - Ổ đĩa của Render là tạm thời: `stats.json` sẽ reset mỗi lần deploy/restart.

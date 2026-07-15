@@ -473,7 +473,7 @@ if __name__ == '__main__':
                 drop_pending_updates=True,
             )
             # Tự ping để không ngủ (KEEP_ALIVE_MINUTES=0 để tắt)
-            ka = int(os.getenv("KEEP_ALIVE_MINUTES", "10"))
+            ka = int(os.getenv("KEEP_ALIVE_MINUTES", "14"))
             if ka > 0:
                 asyncio.create_task(keep_alive(webhook_base, ka))
                 print(f"⏰ Keep-alive: tự ping mỗi {ka} phút", flush=True)
