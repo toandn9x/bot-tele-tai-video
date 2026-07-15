@@ -21,6 +21,7 @@
     --accent:   #2a78d6;
     --good:     #006300;
     --critical: #d03b3b;
+    --tg:       #1e96c8;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
@@ -33,6 +34,7 @@
       --baseline: #383835;
       --accent:   #3987e5;
       --good:     #0ca30c;
+      --tg:       #37aee2;
     }
   }
   :root[data-theme="dark"] {
@@ -45,6 +47,7 @@
     --baseline: #383835;
     --accent:   #3987e5;
     --good:     #0ca30c;
+    --tg:       #37aee2;
   }
 
   * { box-sizing: border-box; margin: 0; }
@@ -127,6 +130,40 @@
   footer { display: flex; gap: 18px; font-size: 13px; flex-wrap: wrap; justify-content: center; }
   footer a { color: var(--muted); text-decoration: none; border-bottom: 1px dotted var(--baseline); padding-bottom: 1px; }
   footer a:hover { color: var(--ink-2); }
+
+  /* card mời dùng bot Telegram */
+  .tg-divider {
+    width: 100%; display: flex; align-items: center; gap: 12px;
+    color: var(--muted); font-size: 12.5px; margin: 2px 0;
+  }
+  .tg-divider::before, .tg-divider::after {
+    content: ""; flex: 1; height: 1px; background: var(--border);
+  }
+  .tg-card {
+    width: 100%; display: flex; align-items: center; gap: 14px;
+    text-decoration: none;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; padding: 14px 16px;
+    transition: border-color .15s, transform .15s, box-shadow .15s;
+  }
+  .tg-card:hover {
+    border-color: var(--tg); transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(41,120,214,.14);
+  }
+  .tg-card .tg-icon {
+    flex: none; width: 42px; height: 42px; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; color: #fff;
+    background: linear-gradient(135deg, #37aee2, #1e96c8);
+  }
+  .tg-card .tg-body { flex: 1; min-width: 0; }
+  .tg-card .tg-title { font-size: 14.5px; font-weight: 650; color: var(--ink); }
+  .tg-card .tg-sub { font-size: 12.5px; color: var(--ink-2); margin-top: 2px; }
+  .tg-card .tg-cta {
+    flex: none; font-size: 13px; font-weight: 600; color: var(--tg);
+    display: flex; align-items: center; gap: 4px;
+  }
+  .tg-card:hover .tg-cta { gap: 7px; }
 </style>
 </head>
 <body>
@@ -146,11 +183,22 @@
     </div>
 
     <div id="status"></div>
+
+    <div class="tg-divider">hoặc tải ngay trong Telegram</div>
+
+    <a class="tg-card" href="https://telegram.me/taivideoonlinebot" target="_blank" rel="noopener">
+      <span class="tg-icon">✈️</span>
+      <span class="tg-body">
+        <span class="tg-title">Dùng bot trên Telegram</span>
+        <span class="tg-sub">Gửi link thẳng trong chat — tải hàng loạt, nhận video ngay trên điện thoại</span>
+      </span>
+      <span class="tg-cta">Mở bot →</span>
+    </a>
   </main>
 
   <footer>
     <a href="/stats">📊 thống kê</a>
-    <a href="https://telegram.me/taivideoonlinebot" target="_blank" rel="noopener">💬 bot telegram</a>
+    <a href="https://telegram.me/taivideoonlinebot" target="_blank" rel="noopener">💬 @taivideoonlinebot</a>
   </footer>
 
 <script>
