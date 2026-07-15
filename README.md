@@ -15,6 +15,7 @@ Bot Telegram mạnh mẽ hỗ trợ tải Video và Ảnh từ nhiều nguồn (
 - **Dán nguyên share text**: Không cần cắt link — dán cả đoạn "复制打开抖音..." bot tự tìm URL.
 - **Tự động dọn dẹp**: Xóa file tạm trên máy tính sau khi gửi để tiết kiệm bộ nhớ.
 - **Chat gọn gàng**: Sau khi gửi video, bot tự xóa tin nhắn link gốc và tin nhắn trạng thái — link nguồn được giữ trong caption.
+- **🎵 Tải nhạc MP3**: Cuối menu chọn chất lượng (cả bot lẫn web) có nút tách audio sang MP3 192kbps (cần FFmpeg).
 - **🌐 Web tải trực tiếp**: Trang chủ (`http://127.0.0.1:8350`) là giao diện tải video kiểu cobalt.tools — dán link, chọn chất lượng, file tải thẳng về máy. Không cần Telegram.
 - **📊 Dashboard thống kê**: Tại `/stats` — lượt tải theo ngày, tỉ lệ thành công, thống kê nền tảng, danh sách tải gần đây. Tự làm mới mỗi 4 giây, có dark mode.
 

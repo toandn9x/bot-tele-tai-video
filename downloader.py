@@ -103,6 +103,53 @@ def _download(url, format_spec, download_dir, progress_hook=None):
         return filename, info.get('title', 'Video')
 
 
+def _extract_audio(target_url, download_dir, progress_hook=None, outtmpl=None, title_hint=None):
+    """Tải audio tốt nhất rồi chuyển sang MP3 192kbps (cần FFmpeg)."""
+    os.makedirs(download_dir, exist_ok=True)
+    extra = {
+        'format': 'bestaudio/best',
+        'outtmpl': outtmpl or f'{download_dir}/%(title).50s_%(id)s.%(ext)s',
+        'postprocessors': [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'mp3',
+            'preferredquality': '192',
+        }],
+    }
+    if progress_hook:
+        extra['progress_hooks'] = [progress_hook]
+
+    with yt_dlp.YoutubeDL(_build_opts(extra)) as ydl:
+        info = ydl.extract_info(target_url, download=True)
+        downloads = info.get('requested_downloads') or []
+        if downloads and downloads[0].get('filepath'):
+            filename = downloads[0]['filepath']
+        else:
+            filename = ydl.prepare_filename(info)
+        # sau postprocessor đuôi đã đổi thành .mp3
+        mp3 = os.path.splitext(filename)[0] + '.mp3'
+        if os.path.exists(mp3):
+            filename = mp3
+        return filename, (title_hint or info.get('title', 'Audio'))
+
+
+def download_audio(url, download_dir='downloads', progress_hook=None):
+    """Tải file MP3 (chỉ dùng được khi có FFmpeg)."""
+    if not HAS_FFMPEG:
+        raise RuntimeError('Cần FFmpeg để tạo file MP3')
+    try:
+        return _extract_audio(url, download_dir, progress_hook)
+    except yt_dlp.utils.DownloadError as e:
+        if _douyin_blocked(url, e):
+            # Douyin chặn yt-dlp → lấy link mp4 từ trang share rồi rút audio
+            logger.info(f"Douyin chặn yt-dlp (audio), chuyển sang trang share: {url}")
+            share = _douyin_share_info(url)
+            return _extract_audio(
+                share['url'], download_dir, progress_hook,
+                outtmpl=f'{download_dir}/douyin_{share["id"]}.%(ext)s',
+                title_hint=share['title'])
+        raise
+
+
 # ---------- Plan B cho Douyin ----------
 # yt-dlp cần cookie chống-bot (s_v_web_id) mà chỉ trình duyệt thật tạo được.
 # May là trang share iesdouyin.com render sẵn server-side, chứa link video

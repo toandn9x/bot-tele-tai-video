@@ -8,7 +8,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotComm
 from telegram.constants import ChatAction
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from dotenv import load_dotenv
-from downloader import get_video_info, download_video, download_specific_format
+from downloader import get_video_info, download_video, download_specific_format, download_audio, HAS_FFMPEG
 import stats
 from dashboard import start_dashboard
 
@@ -239,10 +239,18 @@ async def process_url(update: Update, context: ContextTypes.DEFAULT_TYPE, url: s
 
     # Biết trước quá nặng mà lại không có menu chất lượng để lùi → báo luôn, khỏi tải
     if best_size > TELEGRAM_LIMIT_MB and not formats:
-        await status_msg.edit_text(
-            f"😢 {title}\nVideo nặng ~{best_size:.0f}MB, vượt giới hạn {TELEGRAM_LIMIT_MB}MB "
-            f"của Telegram Bot — không gửi được."
-        )
+        msg = (f"😢 {title}\nVideo nặng ~{best_size:.0f}MB, vượt giới hạn {TELEGRAM_LIMIT_MB}MB "
+               f"của Telegram Bot — không gửi được.")
+        if HAS_FFMPEG:
+            # Video không gửi được, nhưng bản MP3 nhẹ hơn nhiều → mời tải nhạc
+            token = remember_url(context, url, job)
+            await status_msg.edit_text(
+                msg + "\nBạn có thể tải riêng phần nhạc MP3:",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(
+                    "🎵 Tải nhạc MP3", callback_data=f"dl|mp3|{token}")]])
+            )
+            return  # người dùng bấm nút; job kết thúc khi tải xong/hủy
+        await status_msg.edit_text(msg)
         stats.record(url, ok=False, title=title)
         await finish_job_item(job, False)
         return
@@ -265,6 +273,8 @@ async def process_url(update: Update, context: ContextTypes.DEFAULT_TYPE, url: s
             callback_data=f"dl|{fmt['format_id']}|{token}"
         )])
     keyboard.append([InlineKeyboardButton("🎯 Vẫn tải bản tốt nhất", callback_data=f"dl|best|{token}")])
+    if HAS_FFMPEG:
+        keyboard.append([InlineKeyboardButton("🎵 Tải nhạc MP3", callback_data=f"dl|mp3|{token}")])
 
     size_note = f"Bản gốc ~{best_size:.1f}MB, vượt giới hạn 50MB." if best_size else "Không rõ dung lượng bản gốc."
     await status_msg.edit_text(
@@ -300,6 +310,8 @@ async def download_and_send(chat_id, context, url, status_msg, format_id, title=
             hook = make_progress_hook(asyncio.get_running_loop(), status_msg, title)
             if format_id == "best":
                 file_path, title = await asyncio.to_thread(download_video, url, DOWNLOAD_DIR, hook)
+            elif format_id == "mp3":
+                file_path, title = await asyncio.to_thread(download_audio, url, DOWNLOAD_DIR, hook)
             else:
                 file_path, title = await asyncio.to_thread(download_specific_format, url, format_id, DOWNLOAD_DIR, hook)
 
@@ -321,8 +333,10 @@ async def download_and_send(chat_id, context, url, status_msg, format_id, title=
         ext = os.path.splitext(file_path)[1].lower()
         is_video = ext in ['.mp4', '.mkv', '.mov', '.webm']
         is_image = ext in ['.jpg', '.jpeg', '.png', '.webp']
+        is_audio = ext in ['.mp3', '.m4a', '.opus', '.ogg', '.wav', '.flac']
         action = ChatAction.UPLOAD_VIDEO if is_video else (
-            ChatAction.UPLOAD_PHOTO if is_image else ChatAction.UPLOAD_DOCUMENT)
+            ChatAction.UPLOAD_PHOTO if is_image else (
+                ChatAction.UPLOAD_VOICE if is_audio else ChatAction.UPLOAD_DOCUMENT))
 
         stop_anim = start_animation(context.bot, chat_id, status_msg,
                                     f"Đang gửi: {title} ({file_size:.1f}MB)", action)
@@ -337,6 +351,8 @@ async def download_and_send(chat_id, context, url, status_msg, format_id, title=
                     )
                 elif is_image:
                     await context.bot.send_photo(chat_id=chat_id, photo=f, caption=caption)
+                elif is_audio:
+                    await context.bot.send_audio(chat_id=chat_id, audio=f, caption=caption, title=title[:60])
                 else:
                     await context.bot.send_document(chat_id=chat_id, document=f, caption=caption)
         finally:

@@ -125,6 +125,10 @@
   .choices { display: flex; flex-wrap: wrap; gap: 8px; }
   .choices .btn-main { font-size: 13.5px; }
   .choices .btn-ghost { font-size: 13.5px; color: var(--ink); }
+  .btn-audio {
+    font-size: 13.5px; background: none; color: var(--good);
+    border: 1px solid var(--good);
+  }
   .hint { font-size: 12.5px; color: var(--good); }
 
   footer { display: flex; gap: 18px; font-size: 13px; flex-wrap: wrap; justify-content: center; }
@@ -266,6 +270,12 @@
       b.addEventListener('click', () => startDownload(f.format_id, card));
       choices.appendChild(b);
     });
+
+    if (d.audio) {
+      const mp3 = el('button', 'btn btn-audio', '🎵 tải nhạc MP3');
+      mp3.addEventListener('click', () => startDownload('mp3', card));
+      choices.appendChild(mp3);
+    }
 
     card.appendChild(choices);
     setStatus(card);

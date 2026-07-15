@@ -36,6 +36,7 @@ MIME = {
     '.mp4': 'video/mp4', '.webm': 'video/webm', '.mkv': 'video/x-matroska',
     '.mov': 'video/quicktime', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
     '.png': 'image/png', '.webp': 'image/webp',
+    '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4',
 }
 
 
@@ -133,6 +134,7 @@ class _Handler(BaseHTTPRequestHandler):
                 'title': title,
                 'size_mb': round(size_mb, 1),
                 'platform': stats.detect_platform(url),
+                'audio': downloader.HAS_FFMPEG,  # có thể tách MP3 hay không
                 'formats': [{
                     'format_id': f['format_id'],
                     'height': f['height'],
@@ -163,6 +165,8 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             if fmt == 'best':
                 file_path, title = downloader.download_video(url, WEB_DL_DIR)
+            elif fmt == 'mp3':
+                file_path, title = downloader.download_audio(url, WEB_DL_DIR)
             else:
                 file_path, title = downloader.download_specific_format(url, fmt, WEB_DL_DIR)
 
