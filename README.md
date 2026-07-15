@@ -82,6 +82,49 @@ Repo đã có sẵn `Dockerfile` (kèm FFmpeg) và `render.yaml`:
 - Cần `cookies.txt`? **Đừng commit nó lên repo public!** Vào Render → Environment → **Secret Files** → tạo file tên `cookies.txt` với nội dung cookies, mount path để mặc định.
 - Dashboard trên Render là công khai (ai có link đều xem được thống kê). Muốn tắt: đặt biến `DASHBOARD_PORT=0` — nhưng khi đó Render Web Service sẽ fail port scan, hãy chuyển service sang loại **Background Worker** (mất phí) hoặc chấp nhận dashboard công khai.
 
+## 💡 Mẹo tái sử dụng: lách chặn IP datacenter bằng Cloudflare WARP
+
+Áp dụng cho **bất kỳ dự án nào** bị dịch vụ đích chặn IP của cloud host (YouTube, một số API, trang có geo/anti-bot theo IP). Ý tưởng: chạy **Cloudflare WARP ở chế độ proxy** trong container — traffic thoát ra bằng IP Cloudflare (thường không bị blacklist) thay vì IP datacenter.
+
+**Khi nào dùng:** đang chạy trên Render/Koyeb/Fly/VPS và gặp lỗi kiểu "sign in to confirm you're not a bot" / bị chặn theo IP, mà máy cá nhân (IP dân cư) lại không bị.
+
+**1. Dockerfile — cài WARP (base Debian bookworm):**
+```dockerfile
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl gnupg ca-certificates \
+    && curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | gpg --yes --dearmor -o /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ bookworm main" > /etc/apt/sources.list.d/cloudflare-client.list \
+    && apt-get update && apt-get install -y --no-install-recommends cloudflare-warp \
+    && rm -rf /var/lib/apt/lists/*
+```
+
+**2. entrypoint.sh — bật WARP proxy (SOCKS5 `127.0.0.1:40000`) rồi chạy app:**
+```sh
+warp-svc &                                        # daemon
+sleep 3
+warp-cli --accept-tos registration new            # đăng ký (không cần tài khoản)
+warp-cli --accept-tos mode proxy                  # chế độ proxy — KHÔNG cần TUN/NET_ADMIN
+warp-cli --accept-tos connect
+# đợi tới khi status có "Connected" rồi mới export
+export PROXY_URL="socks5://127.0.0.1:40000"
+exec python your_app.py
+```
+> Chế độ **proxy** (không phải VPN full-tunnel) là chìa khoá: không đụng network stack nên chạy được trong container hạn chế quyền như Render/Koyeb. Cần `PySocks` để client hỗ trợ `socks5://`.
+
+**3. Trong code — chỉ định tuyến traffic cần thiết qua proxy:**
+```python
+proxy = os.getenv("PROXY_URL")
+if proxy and is_target(url):      # chỉ áp cho host bị chặn
+    opts["proxy"] = proxy         # các host khác đi thẳng
+```
+
+**Nguyên tắc an toàn (rút ra từ dự án này):**
+- **Chỉ định tuyến host thực sự bị chặn qua proxy** — phần còn lại đi thẳng, để WARP hỏng không kéo sập cả hệ thống.
+- **Fail-safe:** WARP không kết nối được thì app vẫn chạy (chỉ host kia bị chặn), đừng để crash.
+- **Công tắc env** (`USE_WARP=0`) để tắt tức thì không cần sửa code/revert.
+- **Kiểm chứng bằng** `curl --socks5-hostname 127.0.0.1:40000 https://www.cloudflare.com/cdn-cgi/trace` → phải thấy `warp=on` và IP thoát thuộc dải Cloudflare.
+- ⚠️ Không đảm bảo bền — dịch vụ đích có thể chặn dải Cloudflare bất cứ lúc nào. Dự phòng: cookies hoặc IP dân cư (chạy máy nhà / residential proxy trả phí).
+
 ## 👤 Tác giả & Ủng hộ
 - **Phát triển bởi**: Toandn
 - **Ủng hộ**: BIDV 1222172532 DINH NGOC TOAN
