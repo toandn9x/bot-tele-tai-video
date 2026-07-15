@@ -1,7 +1,11 @@
 import yt_dlp
 import os
+import re
+import json
 import shutil
 import logging
+
+import httpx  # có sẵn theo python-telegram-bot
 
 logger = logging.getLogger(__name__)
 
@@ -49,8 +53,15 @@ def get_video_info(url):
     Gọi extract_info đúng một lần cho cả dung lượng, tiêu đề và danh sách format.
     Trả về (best_size_mb, title, formats) — best_size_mb = 0 nếu không rõ.
     """
-    with yt_dlp.YoutubeDL(_build_opts({'format': BEST_FORMAT})) as ydl:
-        info = ydl.extract_info(url, download=False)
+    try:
+        with yt_dlp.YoutubeDL(_build_opts({'format': BEST_FORMAT})) as ydl:
+            info = ydl.extract_info(url, download=False)
+    except yt_dlp.utils.DownloadError as e:
+        if _douyin_blocked(url, e):
+            # Plan B: lấy info từ trang share; formats rỗng -> bot tải thẳng bản này
+            share = _douyin_share_info(url)
+            return 0, share['title'], []
+        raise
 
     by_height = {}
     for f in info.get('formats', []):
@@ -92,9 +103,92 @@ def _download(url, format_spec, download_dir, progress_hook=None):
         return filename, info.get('title', 'Video')
 
 
+# ---------- Plan B cho Douyin ----------
+# yt-dlp cần cookie chống-bot (s_v_web_id) mà chỉ trình duyệt thật tạo được.
+# May là trang share iesdouyin.com render sẵn server-side, chứa link video
+# mà KHÔNG cần cookie — đổi /playwm/ thành /play/ là được bản không watermark.
+
+DOUYIN_UA = ('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) '
+             'AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1')
+
+
+def _is_douyin(url):
+    return 'douyin.com' in url.lower()
+
+
+def _douyin_blocked(url, error):
+    return _is_douyin(url) and 'cookies' in str(error).lower()
+
+
+def _find_key(obj, key):
+    """Tìm đệ quy giá trị đầu tiên của key trong JSON lồng nhau."""
+    if isinstance(obj, dict):
+        if key in obj:
+            return obj[key]
+        for v in obj.values():
+            found = _find_key(v, key)
+            if found is not None:
+                return found
+    elif isinstance(obj, list):
+        for v in obj:
+            found = _find_key(v, key)
+            if found is not None:
+                return found
+    return None
+
+
+def _douyin_share_info(url):
+    """Lấy tiêu đề + link mp4 không watermark từ trang share SSR của Douyin."""
+    resp = httpx.get(url, headers={'User-Agent': DOUYIN_UA}, follow_redirects=True, timeout=20)
+    m = re.search(r'window\._ROUTER_DATA\s*=\s*(\{.*?\})\s*</script>', resp.text, re.DOTALL)
+    if not m:
+        raise ValueError('Không tìm thấy dữ liệu video trong trang share Douyin')
+    data = json.loads(m.group(1))
+    item = _find_key(data, 'item_list') or _find_key(data, 'aweme_detail')
+    if isinstance(item, list):
+        item = item[0] if item else None
+    if not item:
+        raise ValueError('Trang share Douyin không có video (album ảnh hoặc video riêng tư?)')
+    urls = (((item.get('video') or {}).get('play_addr') or {}).get('url_list')) or []
+    if not urls:
+        raise ValueError('Không lấy được link video từ trang share Douyin')
+    return {
+        'title': (item.get('desc') or 'Video Douyin').strip(),
+        'url': urls[0].replace('/playwm/', '/play/'),
+        'id': str(item.get('aweme_id') or 'video'),
+    }
+
+
+def _download_douyin_share(url, download_dir, progress_hook=None):
+    info = _douyin_share_info(url)
+    os.makedirs(download_dir, exist_ok=True)
+    extra = {
+        'format': 'best',
+        'outtmpl': f'{download_dir}/douyin_{info["id"]}.%(ext)s',
+        'http_headers': {'User-Agent': DOUYIN_UA},
+    }
+    if progress_hook:
+        extra['progress_hooks'] = [progress_hook]
+    with yt_dlp.YoutubeDL(_build_opts(extra)) as ydl:
+        result = ydl.extract_info(info['url'], download=True)
+        downloads = result.get('requested_downloads') or []
+        if downloads and downloads[0].get('filepath'):
+            filename = downloads[0]['filepath']
+        else:
+            filename = ydl.prepare_filename(result)
+    return filename, info['title']
+# ---------- hết Plan B Douyin ----------
+
+
 def download_video(url, download_dir='downloads', progress_hook=None):
     """Tải bản chất lượng tốt nhất."""
-    return _download(url, BEST_FORMAT, download_dir, progress_hook)
+    try:
+        return _download(url, BEST_FORMAT, download_dir, progress_hook)
+    except yt_dlp.utils.DownloadError as e:
+        if _douyin_blocked(url, e):
+            logger.info(f"Douyin chặn yt-dlp, chuyển sang trang share: {url}")
+            return _download_douyin_share(url, download_dir, progress_hook)
+        raise
 
 
 def download_specific_format(url, format_id, download_dir='downloads', progress_hook=None):

@@ -11,6 +11,8 @@ Bot Telegram mạnh mẽ hỗ trợ tải Video và Ảnh từ nhiều nguồn (
 - **Tải hàng loạt (Batch Download)**: Gửi danh sách nhiều link (mỗi link một dòng) để bot xử lý cùng lúc.
 - **Hỗ trợ Ảnh**: Tự động nhận diện và tải ảnh/album từ Instagram, Facebook.
 - **Xóa Watermark**: Tự động lấy bản "sạch" cho TikTok và Douyin.
+- **Douyin không cần cookies**: Khi Douyin chặn yt-dlp, bot tự chuyển sang trang share (Plan B) — vẫn tải được bản không watermark.
+- **Dán nguyên share text**: Không cần cắt link — dán cả đoạn "复制打开抖音..." bot tự tìm URL.
 - **Tự động dọn dẹp**: Xóa file tạm trên máy tính sau khi gửi để tiết kiệm bộ nhớ.
 - **Chat gọn gàng**: Sau khi gửi video, bot tự xóa tin nhắn link gốc và tin nhắn trạng thái — link nguồn được giữ trong caption.
 - **📊 Dashboard thống kê**: Web dashboard local tại `http://127.0.0.1:8350` — lượt tải theo ngày, tỉ lệ thành công, thống kê nền tảng, danh sách tải gần đây. Tự làm mới mỗi 4 giây, có dark mode.

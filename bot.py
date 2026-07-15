@@ -41,6 +41,10 @@ def friendly_error(url, error):
     if 'facebook.com/stories' in url:
         return ("⚠️ Facebook Stories hiện chưa được yt-dlp hỗ trợ (kể cả khi đã có cookies đăng nhập).\n"
                 "Bạn hãy gửi link video/reel/bài đăng thông thường.")
+    if 'douyin' in url.lower() and ('cookie' in low or 'login' in low):
+        return ("⚠️ Douyin chặn cả hai đường tải của bot — video có thể riêng tư, đã bị xóa, "
+                "hoặc là album ảnh.\nCó thể thử: mở douyin.com trên trình duyệt (không cần đăng nhập), "
+                "xuất cookies.txt và thêm vào bot.")
     if 'login' in low or 'cookie' in low or 'logged' in low or 'private' in low:
         if os.path.exists('cookies.txt'):
             return ("🔒 Nội dung yêu cầu đăng nhập nhưng cookies hiện tại không truy cập được.\n"
@@ -198,10 +202,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not text:
         return
 
-    urls = [line.strip() for line in text.split('\n') if line.strip().startswith('http')]
+    # Nhặt URL ở bất kỳ đâu trong tin nhắn — dán nguyên share text của
+    # TikTok/Douyin (lẫn chữ tàu, emoji...) bot vẫn tự tìm ra link
+    urls = [u.rstrip('.,;:!?)]}>\'"') for u in re.findall(r'https?://\S+', text)]
+    urls = list(dict.fromkeys(urls))  # bỏ trùng, giữ thứ tự
 
     if not urls:
-        await update.message.reply_text("Xin hãy gửi các đường link video hợp lệ (mỗi link một dòng).")
+        await update.message.reply_text("Không thấy link nào trong tin nhắn. Hãy gửi link video (dán nguyên đoạn share cũng được).")
         return
 
     # Job theo dõi tin nhắn gốc: khi mọi link gửi xong thì xóa tin nhắn link cho gọn chat
