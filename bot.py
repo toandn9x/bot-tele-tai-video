@@ -242,48 +242,32 @@ async def process_url(update: Update, context: ContextTypes.DEFAULT_TYPE, url: s
     finally:
         await stop_anim()
 
-    # Biết trước quá nặng mà lại không có menu chất lượng để lùi → báo luôn, khỏi tải
-    if best_size > TELEGRAM_LIMIT_MB and not formats:
-        msg = (f"😢 {title}\nVideo nặng ~{best_size:.0f}MB, vượt giới hạn {TELEGRAM_LIMIT_MB}MB "
-               f"của Telegram Bot — không gửi được.")
-        if HAS_FFMPEG:
-            # Video không gửi được, nhưng bản MP3 nhẹ hơn nhiều → mời tải nhạc
-            token = remember_url(context, url, job)
-            await status_msg.edit_text(
-                msg + "\nBạn có thể tải riêng phần nhạc MP3:",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(
-                    "🎵 Tải nhạc MP3", callback_data=f"dl|mp3|{token}")]])
-            )
-            return  # người dùng bấm nút; job kết thúc khi tải xong/hủy
-        await status_msg.edit_text(msg)
-        stats.record(url, ok=False, title=title)
-        await finish_job_item(job, False)
-        return
-
-    # Bản tốt nhất đủ nhỏ (hoặc không có format nào để chọn) → tải luôn
-    if 0 < best_size <= TELEGRAM_LIMIT_MB or not formats:
-        size_note = f" (~{best_size:.1f}MB)" if best_size else ""
-        await status_msg.edit_text(f"⬇️ Đang tải: {title}{size_note}")
-        ok = await download_and_send(update.message.chat_id, context, url, status_msg, "best", title)
-        await finish_job_item(job, ok)
-        return
-
-    # Quá lớn hoặc không rõ dung lượng → cho chọn chất lượng
+    # Luôn hiện menu nút chọn định dạng (giống trang web): bản tốt nhất,
+    # các độ phân giải, và MP3. Người dùng tự chọn thứ muốn tải.
     token = remember_url(context, url, job)
     keyboard = []
+
+    best_label = "🎬 Chất lượng tốt nhất"
+    if best_size:
+        best_label += f"  ·  {best_size:.0f}MB"
+    keyboard.append([InlineKeyboardButton(best_label, callback_data=f"dl|best|{token}")])
+
     for fmt in formats:
-        size_str = f" (~{fmt['filesize'] / 1048576:.1f}MB)" if fmt['filesize'] else ""
+        size_str = f"  ·  {fmt['filesize'] / 1048576:.0f}MB" if fmt['filesize'] else ""
         keyboard.append([InlineKeyboardButton(
-            f"{fmt['height']}p{size_str}",
+            f"📺 {fmt['height']}p{size_str}",
             callback_data=f"dl|{fmt['format_id']}|{token}"
         )])
-    keyboard.append([InlineKeyboardButton("🎯 Vẫn tải bản tốt nhất", callback_data=f"dl|best|{token}")])
-    if HAS_FFMPEG:
-        keyboard.append([InlineKeyboardButton("🎵 Tải nhạc MP3", callback_data=f"dl|mp3|{token}")])
 
-    size_note = f"Bản gốc ~{best_size:.1f}MB, vượt giới hạn 50MB." if best_size else "Không rõ dung lượng bản gốc."
+    if HAS_FFMPEG:
+        keyboard.append([InlineKeyboardButton("🎵 Nhạc MP3", callback_data=f"dl|mp3|{token}")])
+
+    note = ""
+    if best_size and best_size > TELEGRAM_LIMIT_MB:
+        note = (f"\n⚠️ Bản gốc ~{best_size:.0f}MB vượt giới hạn {TELEGRAM_LIMIT_MB}MB của Telegram — "
+                f"chọn độ phân giải thấp hơn hoặc MP3 nếu cần.")
     await status_msg.edit_text(
-        f"🎬 {title}\n{size_note} Vui lòng chọn chất lượng:",
+        f"🎬 {title}\nChọn định dạng muốn tải:{note}",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
@@ -421,10 +405,6 @@ if __name__ == '__main__':
     cloud_port = os.getenv("PORT")
     dashboard_port = int(cloud_port or os.getenv("DASHBOARD_PORT", "8350"))
     dashboard_host = "0.0.0.0" if cloud_port else os.getenv("DASHBOARD_HOST", "127.0.0.1")
-    if dashboard_port:
-        dashboard_url = start_dashboard(dashboard_port, dashboard_host)
-        if dashboard_url:
-            print(f"📊 Dashboard: {dashboard_url}", flush=True)
 
     app = builder.post_init(post_init).build()
     app.add_handler(CommandHandler("start", start))
@@ -435,5 +415,43 @@ if __name__ == '__main__':
     app.add_error_handler(error_handler)
 
     import yt_dlp
-    print(f"Bot đang chạy (Hybrid Mode)... [yt-dlp {yt_dlp.version.__version__}]", flush=True)
-    app.run_polling()
+    version_note = f"[yt-dlp {yt_dlp.version.__version__}]"
+
+    # Có URL công khai (Render tự set RENDER_EXTERNAL_URL) → dùng WEBHOOK:
+    # hết xung đột polling khi deploy, và Telegram tự đánh thức service khi ngủ.
+    # Không có → POLLING (chạy local).
+    webhook_base = os.getenv("WEBHOOK_URL") or os.getenv("RENDER_EXTERNAL_URL")
+
+    if webhook_base and dashboard_port:
+        import hashlib
+        from telegram import Update
+        tg_path = "/tg/" + hashlib.sha256(TOKEN.encode()).hexdigest()[:32]
+
+        async def run_webhook():
+            await app.initialize()
+            await post_init(app)          # initialize() không tự gọi post_init
+            await app.start()
+            loop = asyncio.get_running_loop()
+            url = start_dashboard(dashboard_port, dashboard_host,
+                                  tg_app=app, tg_loop=loop, tg_path=tg_path)
+            if url:
+                print(f"📊 Web/Dashboard: {url}", flush=True)
+            await app.bot.set_webhook(
+                url=webhook_base.rstrip('/') + tg_path,
+                allowed_updates=Update.ALL_TYPES,
+                drop_pending_updates=True,
+            )
+            print(f"Bot đang chạy (Webhook) {version_note}", flush=True)
+            await asyncio.Event().wait()  # giữ tiến trình sống
+
+        try:
+            asyncio.run(run_webhook())
+        except (KeyboardInterrupt, SystemExit):
+            pass
+    else:
+        if dashboard_port:
+            url = start_dashboard(dashboard_port, dashboard_host)
+            if url:
+                print(f"📊 Dashboard: {url}", flush=True)
+        print(f"Bot đang chạy (Polling) {version_note}", flush=True)
+        app.run_polling()

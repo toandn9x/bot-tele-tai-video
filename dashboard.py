@@ -23,6 +23,11 @@ HTML_WEB = os.path.join(BASE_DIR, 'web.html')
 HTML_STATS = os.path.join(BASE_DIR, 'dashboard.html')
 WEB_DL_DIR = os.path.join(BASE_DIR, 'downloads', 'web')
 
+# Chế độ webhook Telegram: server này nhận update và đẩy vào Application của
+# python-telegram-bot (chạy trên cùng một cổng với web/dashboard). Được gán khi
+# start_dashboard() được gọi kèm tg_app/tg_loop/tg_path.
+_TG = {'app': None, 'loop': None, 'path': None}
+
 # Chỉ cho web tải từ các nền tảng quen thuộc — chặn việc lợi dụng server
 # tải URL tùy ý (SSRF / proxy chùa)
 ALLOWED_HOSTS = (
@@ -82,10 +87,30 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urllib.parse.urlparse(self.path).path
-        if path == '/api/resolve':
+        if _TG['path'] and path == _TG['path']:
+            self._telegram_webhook()
+        elif path == '/api/resolve':
             self._resolve()
         else:
             self.send_error(404)
+
+    def _telegram_webhook(self):
+        """Nhận update từ Telegram và đẩy vào Application (chạy ở event loop riêng)."""
+        try:
+            length = int(self.headers.get('Content-Length') or 0)
+            data = json.loads(self.rfile.read(length) or b'{}')
+        except (ValueError, OSError):
+            self.send_error(400)
+            return
+        # Trả 200 ngay để Telegram không retry; xử lý update bất đồng bộ trên loop của bot
+        self._respond(b'', 'text/plain; charset=utf-8')
+        try:
+            from telegram import Update
+            update = Update.de_json(data, _TG['app'].bot)
+            import asyncio
+            asyncio.run_coroutine_threadsafe(_TG['app'].process_update(update), _TG['loop'])
+        except Exception as e:
+            logger.error(f"Lỗi xử lý webhook update: {e}")
 
     # ---------- helpers ----------
     def _respond(self, body, content_type, status=200, extra_headers=None):
@@ -212,8 +237,14 @@ class _Handler(BaseHTTPRequestHandler):
         pass  # không xả log request vào console của bot
 
 
-def start_dashboard(port=8350, host='127.0.0.1'):
-    """Chạy web server trong thread nền; trả về URL hoặc None nếu không mở được port."""
+def start_dashboard(port=8350, host='127.0.0.1', tg_app=None, tg_loop=None, tg_path=None):
+    """
+    Chạy web server trong thread nền; trả về URL hoặc None nếu không mở được port.
+    Nếu truyền tg_app/tg_loop/tg_path thì server cũng nhận webhook Telegram tại
+    tg_path và đẩy update vào Application (dùng chung một cổng với web/dashboard).
+    """
+    if tg_app is not None:
+        _TG.update({'app': tg_app, 'loop': tg_loop, 'path': tg_path})
     try:
         server = ThreadingHTTPServer((host, port), _Handler)
     except OSError as e:
