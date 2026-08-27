@@ -9,6 +9,7 @@ from telegram.constants import ChatAction
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from dotenv import load_dotenv
 from downloader import get_video_info, download_video, download_height, download_audio, HAS_FFMPEG
+from douyin import DouyinAlbumError
 import stats
 from dashboard import start_dashboard
 
@@ -41,10 +42,19 @@ def friendly_error(url, error):
     if 'facebook.com/stories' in url:
         return ("⚠️ Facebook Stories hiện chưa được yt-dlp hỗ trợ (kể cả khi đã có cookies đăng nhập).\n"
                 "Bạn hãy gửi link video/reel/bài đăng thông thường.")
-    if 'douyin' in url.lower() and ('cookie' in low or 'login' in low):
-        return ("⚠️ Douyin chặn cả hai đường tải của bot — video có thể riêng tư, đã bị xóa, "
-                "hoặc là album ảnh.\nCó thể thử: mở douyin.com trên trình duyệt (không cần đăng nhập), "
-                "xuất cookies.txt và thêm vào bot.")
+    if isinstance(error, DouyinAlbumError):
+        return f"🖼️ {err}\nBot chỉ tải được video Douyin, chưa hỗ trợ album ảnh."
+    if 'douyin' in url.lower():
+        # Douyin đi đường riêng (API + cookie ttwid tự xin), KHÔNG dùng cookies.txt —
+        # cookies.txt đã kiểm chứng là không cứu được Douyin, đừng gợi ý nhầm.
+        return ("⚠️ Không tải được video Douyin này — video có thể riêng tư, đã bị xóa, "
+                "hoặc Douyin vừa thay đổi cách chặn.\nBạn thử lại sau ít phút xem sao.")
+    if 'tiktok' in url.lower() and ('unexpected response' in low or 'impersonat' in low):
+        return ("⚠️ Máy chủ đang thiếu thư viện giả lập trình duyệt (curl_cffi) nên không "
+                "qua được lớp chống bot của TikTok.\nBáo cho quản trị bot để cài bổ sung.")
+    if 'tiktok' in url.lower() and ('ip address is blocked' in low or 'blocked' in low):
+        return ("🚫 TikTok đang chặn IP của máy chủ bot (mọi người dùng chung một IP).\n"
+                "Thử lại sau ít phút — bot sẽ tự chuyển sang đường dự phòng.")
     is_youtube = 'youtube.com' in url.lower() or 'youtu.be' in url.lower()
     if is_youtube and ('sign in' in low or 'not a bot' in low or 'confirm' in low or 'cookie' in low):
         return ("🤖 YouTube đang chặn máy chủ (bắt đăng nhập để xác minh không phải bot) — "

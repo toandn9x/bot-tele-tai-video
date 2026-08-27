@@ -2,3 +2,6 @@ python-telegram-bot>=20.0
 yt-dlp
 python-dotenv
 PySocks
+# TikTok bắt giả mạo TLS fingerprint của trình duyệt (yt-dlp impersonate=True).
+# Thiếu gói này TikTok lỗi "Unexpected response from webpage request".
+curl_cffi>=0.5.10

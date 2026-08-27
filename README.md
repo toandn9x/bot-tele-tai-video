@@ -11,7 +11,8 @@ Bot Telegram mạnh mẽ hỗ trợ tải Video và Ảnh từ nhiều nguồn (
 - **Tải hàng loạt (Batch Download)**: Gửi danh sách nhiều link (mỗi link một dòng) để bot xử lý cùng lúc.
 - **Hỗ trợ Ảnh**: Tự động nhận diện và tải ảnh/album từ Instagram, Facebook.
 - **Xóa Watermark**: Tự động lấy bản "sạch" cho TikTok và Douyin.
-- **Douyin không cần cookies**: Khi Douyin chặn yt-dlp, bot tự chuyển sang trang share (Plan B) — vẫn tải được bản không watermark.
+- **Douyin không cần cookies**: Bot gọi thẳng API web của Douyin với cookie `ttwid` **tự xin được**, không cần trình duyệt và không cần `cookies.txt`. Lấy được tới 1080p H.264 kèm nhiều mức chất lượng.
+- **TikTok qua được lớp chống bot**: Dùng `curl_cffi` để giả lập TLS fingerprint trình duyệt (yt-dlp bắt buộc), tự thử lại khi TikTok trả trang thiếu dữ liệu, và có đường dự phòng khi IP máy chủ bị chặn.
 - **Dán nguyên share text**: Không cần cắt link — dán cả đoạn "复制打开抖音..." bot tự tìm URL.
 - **Tự động dọn dẹp**: Xóa file tạm trên máy tính sau khi gửi để tiết kiệm bộ nhớ.
 - **Chat gọn gàng**: Sau khi gửi video, bot tự xóa tin nhắn link gốc và tin nhắn trạng thái — link nguồn được giữ trong caption.
@@ -40,6 +41,7 @@ Bot Telegram mạnh mẽ hỗ trợ tải Video và Ảnh từ nhiều nguồn (
    - Bot tự tìm cookies theo thứ tự: biến môi trường `COOKIES_FILE` → `cookies.txt` trong thư mục bot → `/etc/secrets/cookies.txt` (Render Secret Files).
    - ⚠️ *Facebook **Stories** chưa được yt-dlp hỗ trợ kể cả khi có cookies.*
    - ⚠️ *Chạy trên máy chủ (Render, VPS...): **YouTube thường chặn IP datacenter** và bắt đăng nhập "xác minh không phải bot". Đây không phải video riêng tư — cần thêm `cookies.txt` của YouTube (nên dùng **tài khoản phụ**, vì hoạt động bất thường có thể khiến tài khoản bị khóa). Máy tính cá nhân thường tải YouTube bình thường không cần cookies.*
+   - ⚠️ ***Đừng dùng `cookies.txt` cho Douyin*** *— đã kiểm chứng là vô ích. Cookie thật, còn tươi, xuất từ trình duyệt vẫn không giúp yt-dlp tải được Douyin (xem [yt-dlp #9667](https://github.com/yt-dlp/yt-dlp/issues/9667), [#16831](https://github.com/yt-dlp/yt-dlp/issues/16831)). Bot đã đi đường riêng cho Douyin nên không cần cookies.*
 
 ## 🚀 Khởi chạy
 
@@ -59,6 +61,30 @@ py bot.py
 - Web chỉ tải từ các nền tảng trong danh sách cho phép (YouTube, TikTok, Douyin, Facebook, Instagram, X) và giới hạn 2 lượt tải cùng lúc để không quá tải server.
 - Đổi port bằng biến môi trường `DASHBOARD_PORT` trong `.env`; đặt `DASHBOARD_PORT=0` để tắt.
 - Thống kê lưu trong `stats.json` (không đẩy lên git).
+
+## 🧩 TikTok & Douyin — bot lách chặn thế nào
+
+Hai nền tảng này chống bot gắt nhất và **không dùng chung cách xử lý với các trang khác**. Nguyên tắc giữ nguyên như phần WARP bên dưới: *chỉ can thiệp đúng nền tảng bị chặn, phần còn lại đi thẳng, hỏng một chỗ không kéo sập chỗ khác.*
+
+**TikTok** — `downloader.py` + `tikwm.py`
+- TikTok bắt giải JS challenge và **giả lập TLS fingerprint trình duyệt**: yt-dlp gọi `impersonate=True`, việc này cần gói **`curl_cffi`**. Thiếu nó là lỗi `Unexpected response from webpage request` — bot sẽ cảnh báo ngay lúc khởi động.
+- TikTok thỉnh thoảng trả trang thiếu dữ liệu (`Unable to extract universal data for rehydration`) — bot **tự thử lại 3 lần**, giãn cách tăng dần. Lỗi không thuộc diện này (video bị xóa...) thì ném ngay, không phí thời gian.
+- Nếu vẫn hỏng → chuyển sang **TikWM** tải hộ. Cần thiết vì trên Render mọi người dùng **chung một IP**, TikTok chặn IP là chặn cả bot; TikWM tải bằng hạ tầng của họ nên không dính. Tắt bằng `USE_TIKWM=0`.
+- Bot luôn lấy bản **H.264** từ TikWM (bản HD của họ là HEVC — Telegram hay treo, Windows cũng cần cài thêm HEVC).
+
+**Douyin** — `douyin.py`
+- yt-dlp **không tải được Douyin** và cookies.txt cũng không cứu (xem cảnh báo ở phần cài đặt). Cách cũ parse `window._ROUTER_DATA` của trang share cũng đã chết — Douyin bỏ hết dữ liệu video khỏi SSR.
+- Bot gọi thẳng `https://www.douyin.com/aweme/v1/web/aweme/detail/` với cookie **`ttwid`**, và `ttwid` **tự xin được** từ endpoint đăng ký của ByteDance — không cần trình duyệt, không cần đăng nhập, **không thêm dependency nào**.
+- Đo thực tế: chỉ cần `ttwid`; `s_v_web_id` không cần, chữ ký `a_bogus` cũng không cần → không phải kéo về thư viện chữ ký nào.
+- Trả về nhiều mức chất lượng (tới 1080p H.264), link nhạc MP3, và nhận diện được bài dạng album ảnh.
+- ⚠️ Đây là API nội bộ không chính thức — Douyin có thể siết bất cứ lúc nào. Bot đã bọc lỗi rõ ràng để khi đó vẫn báo dễ hiểu thay vì văng lỗi kỹ thuật.
+
+**Biến môi trường liên quan**
+
+| Biến | Mặc định | Tác dụng |
+|---|---|---|
+| `USE_TIKWM` | `1` | Bật đường dự phòng TikWM cho TikTok. Đặt `0` để chỉ dùng yt-dlp |
+| `USE_WARP` | `1` | Bật Cloudflare WARP cho YouTube (xem phần dưới) |
 
 ## ☁️ Deploy lên Render.com
 

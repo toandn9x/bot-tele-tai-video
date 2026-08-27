@@ -54,8 +54,15 @@ def _host_allowed(url):
 def _friendly(url, error):
     """Bản rút gọn của thông báo lỗi thân thiện cho web (không import bot.py để tránh vòng lặp)."""
     low = str(error).lower()
-    if 'douyin' in url.lower() and ('cookie' in low or 'login' in low):
-        return 'Douyin đang chặn — video có thể riêng tư, đã bị xóa hoặc là album ảnh.'
+    if isinstance(error, downloader.douyin.DouyinAlbumError):
+        return str(error)
+    if 'douyin' in url.lower():
+        return ('Không tải được video Douyin này — có thể riêng tư, đã bị xóa, '
+                'hoặc Douyin vừa đổi cách chặn. Thử lại sau ít phút.')
+    if 'tiktok' in url.lower() and ('unexpected response' in low or 'impersonat' in low):
+        return 'Máy chủ thiếu thư viện curl_cffi nên không qua được lớp chống bot của TikTok.'
+    if 'tiktok' in url.lower() and 'blocked' in low:
+        return 'TikTok đang chặn IP máy chủ. Thử lại sau ít phút.'
     if ('youtube' in url.lower() or 'youtu.be' in url.lower()) and (
             'sign in' in low or 'not a bot' in low or 'confirm' in low or 'cookie' in low):
         return ('YouTube đang chặn máy chủ (bắt xác minh không phải bot) — đây không phải video riêng tư. '

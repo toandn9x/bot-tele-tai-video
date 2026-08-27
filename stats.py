@@ -25,7 +25,10 @@ def record_ping():
 _PLATFORM_PATTERNS = [
     ('youtu', 'YouTube'),
     ('tiktok', 'TikTok'),
-    ('douyin', 'TikTok'),
+    # Douyin tách riêng khỏi TikTok: hai nền tảng này đi hai đường code khác hẳn
+    # (Douyin dùng API riêng + ttwid), gộp chung thì nhìn dashboard không biết
+    # bên nào đang hỏng.
+    ('douyin', 'Douyin'),
     ('facebook', 'Facebook'),
     ('fb.watch', 'Facebook'),
     ('instagram', 'Instagram'),
