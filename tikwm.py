@@ -106,6 +106,7 @@ def _download(target_url, download_dir, progress_hook, name, title, audio=False)
         'quiet': True, 'no_warnings': True, 'noprogress': True,
         'outtmpl': f'{download_dir}/{name}.%(ext)s',
         'http_headers': {'User-Agent': UA, 'Referer': 'https://www.tiktok.com/'},
+        'retries': 3, 'fragment_retries': 3, 'socket_timeout': 30,
     }
     if progress_hook:
         opts['progress_hooks'] = [progress_hook]
@@ -128,9 +129,24 @@ def _download(target_url, download_dir, progress_hook, name, title, audio=False)
 
 
 def download(url, download_dir='downloads', progress_hook=None):
+    """Link CDN của TikTok cũng có hạn dùng — bản ưu tiên 403 thì thử bản còn lại."""
     detail = get_detail(url)
-    return _download(_best(detail)['url'], download_dir, progress_hook,
-                     f"tiktok_{detail['id'] or 'video'}", detail['title'])
+    best = _best(detail)
+    order = [best] + [f for f in detail['formats'] if f is not best]
+
+    last = None
+    for i, fmt in enumerate(order, 1):
+        try:
+            return _download(fmt['url'], download_dir, progress_hook,
+                             f"tiktok_{detail['id'] or 'video'}", detail['title'])
+        except Exception as e:
+            last = e
+            low = str(e).lower()
+            if not any(s in low for s in ('403', 'forbidden', '404', 'timed out',
+                                          'connection', 'unable to download video data')):
+                raise
+            logger.info(f"Link TikWM {i}/{len(order)} lỗi ({str(e)[:60]}), thử bản còn lại")
+    raise last
 
 
 def download_audio(url, download_dir='downloads', progress_hook=None):

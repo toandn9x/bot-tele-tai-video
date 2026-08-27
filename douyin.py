@@ -186,7 +186,10 @@ def _formats(video):
         if key not in out or size > out[key]['filesize']:
             out[key] = {
                 'label': label, 'width': width, 'height': height,
-                'filesize': size, 'url': urls[0], 'codec': codec, 'gear': gear,
+                # Giữ CẢ danh sách: Douyin trả 2-3 nút CDN cho mỗi bản, và một
+                # nút lẻ trả 403 là chuyện thường. Có nút dự phòng thì không
+                # hỏng cả lượt tải.
+                'filesize': size, 'urls': urls, 'codec': codec, 'gear': gear,
             }
 
     # Bản dự phòng khi bit_rate rỗng
@@ -198,7 +201,7 @@ def _formats(video):
             height = addr.get('height') or 0
             out[(min(width, height) or 0, 'h264')] = {
                 'label': min(width, height) or 0, 'width': width, 'height': height,
-                'filesize': addr.get('data_size') or 0, 'url': urls[0],
+                'filesize': addr.get('data_size') or 0, 'urls': urls,
                 'codec': 'h264', 'gear': '',
             }
 
@@ -249,10 +252,7 @@ def pick_format(formats, height=None, prefer_h264=True):
 def video_info(url):
     """Khớp chữ ký get_video_info() của downloader: (best_mb, title, formats_menu)."""
     detail = get_detail(url)
-    if detail['is_album']:
-        raise DouyinAlbumError(
-            f"Đây là album ảnh ({len(detail['images'])} ảnh), không phải video — "
-            f"bot chưa hỗ trợ tải album Douyin.")
+    _guard_album(detail)
 
     steps = ladder(detail['formats'], prefer_h264=True)
     if not steps:
@@ -274,6 +274,7 @@ def _ydl_opts(detail, download_dir, progress_hook, suffix):
         'outtmpl': f'{download_dir}/douyin_{detail["id"]}_{suffix}.%(ext)s',
         # CDN của Douyin từ chối request không có Referer
         'http_headers': {'User-Agent': UA, 'Referer': 'https://www.douyin.com/'},
+        'retries': 3, 'fragment_retries': 3, 'socket_timeout': 30,
     }
     if progress_hook:
         opts['progress_hooks'] = [progress_hook]
@@ -289,33 +290,85 @@ def _run(opts, target_url, title):
         return ydl.prepare_filename(info), title
 
 
+# Lỗi CDN nhất thời — đổi nút khác hoặc xin link mới là qua
+_CDN_TRANSIENT = ('403', 'forbidden', '404', 'not found', 'unable to download video data',
+                  'timed out', 'timeout', 'connection', 'remote end closed')
+
+
+def _is_transient(error):
+    low = str(error).lower()
+    return any(s in low for s in _CDN_TRANSIENT)
+
+
+def _download_any(urls, opts, title, what='video'):
+    """Thử lần lượt từng nút CDN, chỉ bỏ cuộc khi hết đường."""
+    last = None
+    for i, target in enumerate(urls, 1):
+        try:
+            return _run(opts, target, title)
+        except Exception as e:
+            last = e
+            if not _is_transient(e):
+                raise
+            logger.info(f"Nút CDN {i}/{len(urls)} lỗi khi tải {what} "
+                        f"({str(e)[:60]}), thử nút tiếp theo")
+    raise last if last else RuntimeError('Không có URL nào để tải')
+
+
+def _fetch_and_download(url, build):
+    """
+    Tải với link đang có; hỏng hết nút CDN thì xin lại detail để có link KÝ MỚI
+    rồi thử lại một vòng.
+
+    Link CDN của Douyin có chữ ký kèm hạn dùng, nên link cũ 403 là bình thường —
+    đây là lý do "thử lại lần 2 thì được".
+    """
+    last = None
+    for attempt in range(2):
+        detail = get_detail(url)
+        try:
+            return build(detail)
+        except Exception as e:
+            last = e
+            if attempt == 0 and _is_transient(e):
+                logger.info('Hỏng hết nút CDN, xin link ký mới rồi thử lại')
+                continue
+            raise
+    raise last
+
+
+def _guard_album(detail, what='video'):
+    if detail['is_album']:
+        raise DouyinAlbumError(
+            f"Đây là album ảnh ({len(detail['images'])} ảnh), không phải {what} — "
+            f"bot chưa hỗ trợ tải album Douyin.")
+
+
 def download(url, download_dir='downloads', progress_hook=None,
              height=None, prefer_h264=True):
     """Tải video Douyin (bản không watermark) qua URL trực tiếp từ API."""
-    detail = get_detail(url)
-    if detail['is_album']:
-        raise DouyinAlbumError(
-            f"Đây là album ảnh ({len(detail['images'])} ảnh), không phải video — "
-            f"bot chưa hỗ trợ tải album Douyin.")
+    def build(detail):
+        _guard_album(detail)
+        fmt = pick_format(detail['formats'], height=height, prefer_h264=prefer_h264)
+        os.makedirs(download_dir, exist_ok=True)
+        opts = _ydl_opts(detail, download_dir, progress_hook, f'{fmt["label"]}p')
+        return _download_any(fmt['urls'], opts, detail['title'])
 
-    fmt = pick_format(detail['formats'], height=height, prefer_h264=prefer_h264)
-    os.makedirs(download_dir, exist_ok=True)
-    opts = _ydl_opts(detail, download_dir, progress_hook, f'{fmt["label"]}p')
-    return _run(opts, fmt['url'], detail['title'])
+    return _fetch_and_download(url, build)
 
 
 def download_audio(url, download_dir='downloads', progress_hook=None):
     """Tách MP3 từ chính video (không dùng link nhạc nền — có thể khác tiếng gốc)."""
-    detail = get_detail(url)
-    if detail['is_album']:
-        raise DouyinAlbumError('Đây là album ảnh, không có video để tách nhạc.')
+    def build(detail):
+        _guard_album(detail, 'video để tách nhạc')
+        fmt = pick_format(detail['formats'], prefer_h264=True)
+        os.makedirs(download_dir, exist_ok=True)
+        opts = _ydl_opts(detail, download_dir, progress_hook, 'audio')
+        opts['postprocessors'] = [{
+            'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192',
+        }]
+        path, title = _download_any(fmt['urls'], opts, detail['title'], what='nhạc')
+        mp3 = os.path.splitext(path)[0] + '.mp3'
+        return (mp3 if os.path.exists(mp3) else path), title
 
-    fmt = pick_format(detail['formats'], prefer_h264=True)
-    os.makedirs(download_dir, exist_ok=True)
-    opts = _ydl_opts(detail, download_dir, progress_hook, 'audio')
-    opts['postprocessors'] = [{
-        'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192',
-    }]
-    path, title = _run(opts, fmt['url'], detail['title'])
-    mp3 = os.path.splitext(path)[0] + '.mp3'
-    return (mp3 if os.path.exists(mp3) else path), title
+    return _fetch_and_download(url, build)
